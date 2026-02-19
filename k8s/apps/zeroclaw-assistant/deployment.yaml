@@ -1,0 +1,87 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: zeroclaw-assistant
+  namespace: zeroclaw-assistant
+  labels:
+    app.kubernetes.io/name: zeroclaw-assistant
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: zeroclaw-assistant
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: zeroclaw-assistant
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - name: zeroclaw-assistant
+          image: ghcr.io/vollcomdigital/zeroclaw-assistant:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: LITELLM_GATEWAY_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: zeroclaw-assistant-config
+                  key: LITELLM_GATEWAY_URL
+            - name: DEVELOPER_VIRTUAL_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: zeroclaw-assistant-secrets
+                  key: DEVELOPER_VIRTUAL_API_KEY
+            - name: RUST_LOG
+              valueFrom:
+                configMapKeyRef:
+                  name: zeroclaw-assistant-config
+                  key: RUST_LOG
+            - name: ZEROCLAW_BIND_ADDRESS
+              valueFrom:
+                configMapKeyRef:
+                  name: zeroclaw-assistant-config
+                  key: ZEROCLAW_BIND_ADDRESS
+          resources:
+            requests:
+              cpu: 10m
+              memory: 10Mi
+            limits:
+              cpu: 100m
+              memory: 50Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+        - name: cloudflared
+          image: cloudflare/cloudflared:latest
+          imagePullPolicy: IfNotPresent
+          args:
+            - tunnel
+            - --no-autoupdate
+            - run
+            - --token
+            - $(CLOUDFLARE_TUNNEL_TOKEN)
+          env:
+            - name: CLOUDFLARE_TUNNEL_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: zeroclaw-assistant-secrets
+                  key: CLOUDFLARE_TUNNEL_TOKEN
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
