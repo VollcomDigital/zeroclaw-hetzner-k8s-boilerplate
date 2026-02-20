@@ -14,9 +14,20 @@ export interface IUser {
   updatedAt: Date;
 }
 
+export interface IUserPublic {
+  id: string;
+  email: string;
+  firstName: string;
+  lastName: string;
+  role: string;
+  isActive: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 export interface IUserDocument extends IUser, Document {
   comparePassword(candidatePassword: string): Promise<boolean>;
-  toPublicJSON(): Omit<IUser, 'password'> & { id: string };
+  toPublicJSON(): IUserPublic;
 }
 
 export interface IUserModel extends Model<IUserDocument> {
@@ -75,14 +86,15 @@ userSchema.pre('save', async function (next) {
 });
 
 userSchema.methods.comparePassword = async function (
+  this: IUserDocument,
   candidatePassword: string,
 ): Promise<boolean> {
-  return bcrypt.compare(candidatePassword, this.password as string);
+  return bcrypt.compare(candidatePassword, this.password);
 };
 
-userSchema.methods.toPublicJSON = function () {
+userSchema.methods.toPublicJSON = function (this: IUserDocument): IUserPublic {
   return {
-    id: (this._id as mongoose.Types.ObjectId).toString(),
+    id: String(this._id),
     email: this.email,
     firstName: this.firstName,
     lastName: this.lastName,
@@ -94,7 +106,8 @@ userSchema.methods.toPublicJSON = function () {
 };
 
 userSchema.statics.findByEmail = function (email: string) {
-  return this.findOne({ email }).select('+password');
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
+  return this.findOne({ email }).select('+password').exec() as Promise<IUserDocument | null>;
 };
 
 export const User = mongoose.model<IUserDocument, IUserModel>('User', userSchema);

@@ -52,10 +52,10 @@ export async function login(
   });
 }
 
-export async function me(
+export function me(
   req: Request,
   res: Response<ApiResponse<{ userId: string; email: string; role: string }>>,
-): Promise<void> {
+): void {
   res.json({
     success: true,
     data: req.user!,

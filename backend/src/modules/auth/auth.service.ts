@@ -60,7 +60,7 @@ export class AuthService {
     };
 
     return jwt.sign(payload, env.JWT_SECRET, {
-      expiresIn: env.JWT_EXPIRES_IN as string,
+      expiresIn: env.JWT_EXPIRES_IN,
     } as jwt.SignOptions);
   }
 }

@@ -49,5 +49,5 @@ export async function disconnectDatabase(): Promise<void> {
 }
 
 export function isDatabaseHealthy(): boolean {
-  return mongoose.connection.readyState === 1;
+  return mongoose.connection.readyState === mongoose.ConnectionStates.connected;
 }

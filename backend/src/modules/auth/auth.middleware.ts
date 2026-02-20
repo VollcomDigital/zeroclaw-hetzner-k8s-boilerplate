@@ -2,15 +2,15 @@ import { Request, Response, NextFunction } from 'express';
 import { authService } from './auth.service';
 import { UnauthorizedError } from '../../core/errors/app-error';
 
-declare global {
-  namespace Express {
-    interface Request {
-      user?: {
-        userId: string;
-        email: string;
-        role: string;
-      };
-    }
+export interface AuthenticatedUser {
+  userId: string;
+  email: string;
+  role: string;
+}
+
+declare module 'express-serve-static-core' {
+  interface Request {
+    user?: AuthenticatedUser;
   }
 }
 

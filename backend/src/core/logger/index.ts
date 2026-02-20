@@ -7,7 +7,7 @@ export const logger = pino({
   ...(isProduction
     ? {
         formatters: {
-          level: (label: string) => ({ level: label }),
+          level: (label: string): { level: string } => ({ level: label }),
         },
         timestamp: pino.stdTimeFunctions.isoTime,
       }
