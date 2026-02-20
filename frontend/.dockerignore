@@ -1,0 +1,12 @@
+node_modules
+dist
+coverage
+.angular
+.git
+.gitignore
+.vscode
+.idea
+*.log
+.env
+.env.*
+!.env.example
