@@ -33,6 +33,18 @@ interface RegisterPayload extends LoginPayload {
 const TOKEN_KEY = 'auth_token';
 const USER_KEY = 'auth_user';
 
+function isAuthUser(value: unknown): value is AuthUser {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    typeof (value as Record<string, unknown>)['id'] === 'string' &&
+    typeof (value as Record<string, unknown>)['email'] === 'string' &&
+    typeof (value as Record<string, unknown>)['firstName'] === 'string' &&
+    typeof (value as Record<string, unknown>)['lastName'] === 'string' &&
+    typeof (value as Record<string, unknown>)['role'] === 'string'
+  );
+}
+
 @Injectable({ providedIn: 'root' })
 export class AuthService {
   private readonly currentUser = signal<AuthUser | null>(this.loadStoredUser());
@@ -87,8 +99,14 @@ export class AuthService {
     const stored = localStorage.getItem(USER_KEY);
     if (!stored) return null;
     try {
-      return JSON.parse(stored) as AuthUser;
+      const parsed: unknown = JSON.parse(stored);
+      if (isAuthUser(parsed)) {
+        return parsed;
+      }
+      localStorage.removeItem(USER_KEY);
+      return null;
     } catch {
+      localStorage.removeItem(USER_KEY);
       return null;
     }
   }
