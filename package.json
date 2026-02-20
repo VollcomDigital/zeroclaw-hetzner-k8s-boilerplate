@@ -4,7 +4,7 @@
   "private": true,
   "description": "Cloud-Native MEAN Stack Boilerplate with TypeScript, Docker, and 12-Factor App methodology",
   "scripts": {
-    "install:all": "npm install && cd backend && npm install && cd ../frontend && npm install",
+    "install:all": "npm install && npm install --prefix backend && npm install --prefix frontend",
     "dev:backend": "npm run dev --prefix backend",
     "dev:frontend": "npm run start --prefix frontend",
     "build:backend": "npm run build --prefix backend",
