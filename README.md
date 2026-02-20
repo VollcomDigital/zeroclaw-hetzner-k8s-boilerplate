@@ -135,7 +135,7 @@ All backend configuration is validated at startup using **Zod**. See `backend/.e
 | `PORT`        | No       | `3000`               | Server port                |
 | `MONGODB_URI` | Yes      | —                    | MongoDB connection string  |
 | `JWT_SECRET`  | Yes      | —                    | JWT signing secret (min 16 chars) |
-| `JWT_EXPIRES_IN` | No   | `7d`                 | Token expiration           |
+| `JWT_EXPIRES_IN` | No       | `7d`                 | Token expiration           |
 | `CORS_ORIGIN` | No       | `http://localhost:4200` | Allowed CORS origin     |
 | `LOG_LEVEL`   | No       | `info`               | Pino log level             |
 
