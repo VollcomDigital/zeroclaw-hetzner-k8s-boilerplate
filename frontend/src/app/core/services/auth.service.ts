@@ -12,6 +12,24 @@ interface AuthUser {
   role: string;
 }
 
+/** Type guard to validate parsed localStorage data matches AuthUser. */
+function isAuthUser(obj: unknown): obj is AuthUser {
+  return (
+    typeof obj === 'object' &&
+    obj !== null &&
+    'id' in obj &&
+    typeof (obj as AuthUser).id === 'string' &&
+    'email' in obj &&
+    typeof (obj as AuthUser).email === 'string' &&
+    'firstName' in obj &&
+    typeof (obj as AuthUser).firstName === 'string' &&
+    'lastName' in obj &&
+    typeof (obj as AuthUser).lastName === 'string' &&
+    'role' in obj &&
+    typeof (obj as AuthUser).role === 'string'
+  );
+}
+
 interface AuthResponse {
   success: boolean;
   data: {
@@ -87,7 +105,8 @@ export class AuthService {
     const stored = localStorage.getItem(USER_KEY);
     if (!stored) return null;
     try {
-      return JSON.parse(stored) as AuthUser;
+      const parsed: unknown = JSON.parse(stored);
+      return isAuthUser(parsed) ? parsed : null;
     } catch {
       return null;
     }
