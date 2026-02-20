@@ -1,0 +1,41 @@
+{
+  "name": "cloud-native-mean-boilerplate",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Cloud-native MEAN stack (MongoDB, Express, Angular, Node.js) boilerplate with 12-Factor methodology",
+  "scripts": {
+    "prepare": "husky",
+    "lint": "eslint . --ext .ts,.tsx,.js,.jsx",
+    "lint:fix": "eslint . --ext .ts,.tsx,.js,.jsx --fix",
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md}\"",
+    "backend:install": "cd backend && npm install",
+    "backend:dev": "cd backend && npm run dev",
+    "backend:build": "cd backend && npm run build",
+    "backend:test": "cd backend && npm test",
+    "frontend:install": "cd frontend && npm install",
+    "frontend:dev": "cd frontend && npm run start",
+    "frontend:build": "cd frontend && npm run build",
+    "frontend:test": "cd frontend && npm test",
+    "install:all": "npm run backend:install && npm run frontend:install",
+    "dev": "concurrently \"npm run backend:dev\" \"npm run frontend:dev\"",
+    "docker:up": "docker-compose up -d",
+    "docker:down": "docker-compose down"
+  },
+  "devDependencies": {
+    "@commitlint/cli": "^18.4.4",
+    "@commitlint/config-conventional": "^18.4.4",
+    "@typescript-eslint/eslint-plugin": "^7.0.0",
+    "@typescript-eslint/parser": "^7.0.0",
+    "concurrently": "^8.2.2",
+    "eslint": "^8.56.0",
+    "eslint-config-prettier": "^9.1.0",
+    "husky": "^9.0.11",
+    "lint-staged": "^15.2.0",
+    "prettier": "^3.2.5",
+    "typescript": "^5.3.3"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
