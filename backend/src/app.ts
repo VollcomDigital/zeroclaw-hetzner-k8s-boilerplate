@@ -1,4 +1,5 @@
 import express, { Application } from 'express';
+import cookieParser from 'cookie-parser';
 import { securityMiddleware } from './core/middleware/security';
 import { requestLogger } from './core/middleware/request-logger';
 import { errorHandler } from './core/middleware/error-handler';
@@ -12,6 +13,7 @@ export function createApp(): Application {
 
   app.use(express.json({ limit: '10mb' }));
   app.use(express.urlencoded({ extended: true }));
+  app.use(cookieParser());
 
   app.use(...securityMiddleware());
 

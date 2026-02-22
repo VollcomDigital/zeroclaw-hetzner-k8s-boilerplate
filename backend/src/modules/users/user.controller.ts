@@ -1,13 +1,26 @@
 import { Request, Response } from 'express';
 import { userService } from './user.service';
 import { updateUserSchema } from './user.validation';
-import { BadRequestError } from '../../core/errors/app-error';
+import { BadRequestError, ForbiddenError, UnauthorizedError } from '../../core/errors/app-error';
 import { ApiResponse, PaginatedResponse } from '../../shared/types/response';
 import { IUserPublic } from './user.model';
 
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 20;
 const MAX_LIMIT = 100;
+
+function ensureUserAccess(req: Request, targetUserId: string): void {
+  if (!req.user) {
+    throw new UnauthorizedError();
+  }
+
+  const isAdmin = req.user.role === 'admin';
+  const isOwner = req.user.userId === targetUserId;
+
+  if (!isAdmin && !isOwner) {
+    throw new ForbiddenError('You can only access your own user account');
+  }
+}
 
 export async function getUsers(
   req: Request,
@@ -37,6 +50,7 @@ export async function getUser(
   res: Response<ApiResponse<IUserPublic>>,
 ): Promise<void> {
   const { id } = req.params;
+  ensureUserAccess(req, id);
   const user = await userService.findById(id);
   res.json({ success: true, data: user.toPublicJSON() });
 }
@@ -50,6 +64,7 @@ export async function updateUser(
     throw new BadRequestError(result.error.issues.map((i) => i.message).join(', '));
   }
   const { id } = req.params;
+  ensureUserAccess(req, id);
   const user = await userService.update(id, result.data);
   res.json({ success: true, data: user.toPublicJSON() });
 }
@@ -59,6 +74,7 @@ export async function deleteUser(
   res: Response<ApiResponse<null>>,
 ): Promise<void> {
   const { id } = req.params;
+  ensureUserAccess(req, id);
   await userService.delete(id);
   res.status(204).json({ success: true, data: null });
 }

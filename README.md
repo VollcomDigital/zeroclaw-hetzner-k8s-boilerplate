@@ -8,8 +8,8 @@ Production-ready **MongoDB + Express + Angular + Node.js** boilerplate built wit
 |------------|--------------------------------------------------|
 | Database   | MongoDB 7 + Mongoose ODM                        |
 | Backend    | Node.js 20+, Express 4, TypeScript (strict)     |
-| Frontend   | Angular 18, Standalone Components, Signals, SCSS |
-| Auth       | JWT (jsonwebtoken) + bcryptjs                    |
+| Frontend   | Angular 21, Standalone Components, Signals, SCSS |
+| Auth       | JWT + HttpOnly cookie session + bcryptjs         |
 | Validation | Zod (backend), Angular Forms (frontend)          |
 | Logging    | Pino (structured JSON logging)                   |
 | Testing    | Jest (backend), Karma/Jasmine (frontend)         |
@@ -63,6 +63,9 @@ Production-ready **MongoDB + Express + Angular + Node.js** boilerplate built wit
 ### Option 1: Docker Compose (Recommended)
 
 ```bash
+# Configure required Docker secrets
+cp .env.example .env
+
 # Clone and start the full stack
 docker compose up -d
 
@@ -101,17 +104,18 @@ npm run dev:frontend
 | Method | Endpoint              | Description            |
 |--------|-----------------------|------------------------|
 | POST   | `/api/v1/auth/register` | Register new user    |
-| POST   | `/api/v1/auth/login`    | Login (returns JWT)  |
+| POST   | `/api/v1/auth/login`    | Login (sets HttpOnly auth cookie)  |
 | GET    | `/api/v1/auth/me`       | Get current user     |
+| POST   | `/api/v1/auth/logout`   | Clear auth session cookie |
 
 ### Users (Protected)
 
 | Method | Endpoint              | Description            |
 |--------|-----------------------|------------------------|
-| GET    | `/api/v1/users`         | List users (paginated) |
-| GET    | `/api/v1/users/:id`     | Get user by ID         |
-| PUT    | `/api/v1/users/:id`     | Update user            |
-| DELETE | `/api/v1/users/:id`     | Soft-delete user       |
+| GET    | `/api/v1/users`         | List users (admin only, paginated) |
+| GET    | `/api/v1/users/:id`     | Get own user (or admin any user)   |
+| PUT    | `/api/v1/users/:id`     | Update own user (or admin any user) |
+| DELETE | `/api/v1/users/:id`     | Soft-delete own user (or admin any user) |
 
 ### Response Format
 
@@ -168,12 +172,12 @@ npm run test
 
 - **12-Factor App**: Config via env vars, stateless processes, port binding, dev/prod parity
 - **Domain-Driven Modules**: Each feature (auth, users, health) is self-contained
-- **Standalone Components**: No NgModules — Angular 18 standalone architecture throughout
+- **Standalone Components**: No NgModules — Angular 21 standalone architecture throughout
 - **Signals**: Modern reactive state management in Angular services
 - **Lazy Loading**: All feature routes are code-split and lazy-loaded
 - **Structured Logging**: JSON logs via Pino for cloud-native log aggregation
 - **Health Probes**: Kubernetes-compatible liveness and readiness endpoints
-- **Security**: Helmet, CORS, rate limiting, bcrypt password hashing, JWT auth
+- **Security**: Helmet, CORS, auth-specific + global rate limiting, RBAC, ownership checks, bcrypt password hashing, HttpOnly cookie auth
 - **Conventional Commits**: Enforced via Husky + commitlint
 
 ## License

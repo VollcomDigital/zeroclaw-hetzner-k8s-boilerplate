@@ -1,8 +1,10 @@
 import { Request, Response } from 'express';
 import { authService } from './auth.service';
 import { registerSchema, loginSchema } from './auth.validation';
-import { BadRequestError } from '../../core/errors/app-error';
+import { BadRequestError, UnauthorizedError } from '../../core/errors/app-error';
 import { ApiResponse } from '../../shared/types/response';
+import { userService } from '../users/user.service';
+import { AUTH_COOKIE_NAME, getAuthCookieOptions } from './auth.constants';
 
 interface AuthPayload {
   user: {
@@ -15,7 +17,19 @@ interface AuthPayload {
     createdAt: Date;
     updatedAt: Date;
   };
-  token: string;
+}
+
+interface SessionPayload {
+  user: {
+    id: string;
+    email: string;
+    firstName: string;
+    lastName: string;
+    role: string;
+    isActive: boolean;
+    createdAt: Date;
+    updatedAt: Date;
+  };
 }
 
 export async function register(
@@ -28,10 +42,13 @@ export async function register(
   }
 
   const authResult = await authService.register(result.data);
+  res.cookie(AUTH_COOKIE_NAME, authResult.token, getAuthCookieOptions());
 
   res.status(201).json({
     success: true,
-    data: authResult,
+    data: {
+      user: authResult.user,
+    },
   });
 }
 
@@ -45,19 +62,45 @@ export async function login(
   }
 
   const authResult = await authService.login(result.data);
+  res.cookie(AUTH_COOKIE_NAME, authResult.token, getAuthCookieOptions());
 
   res.json({
     success: true,
-    data: authResult,
+    data: {
+      user: authResult.user,
+    },
   });
 }
 
-export function me(
+export async function me(
   req: Request,
-  res: Response<ApiResponse<{ userId: string; email: string; role: string }>>,
-): void {
+  res: Response<ApiResponse<SessionPayload>>,
+): Promise<void> {
+  if (!req.user) {
+    throw new UnauthorizedError();
+  }
+
+  const user = await userService.findById(req.user.userId);
+
   res.json({
     success: true,
-    data: req.user!,
+    data: {
+      user: user.toPublicJSON(),
+    },
+  });
+}
+
+export function logout(_req: Request, res: Response<ApiResponse<null>>): void {
+  const cookieOptions = getAuthCookieOptions();
+  res.clearCookie(AUTH_COOKIE_NAME, {
+    httpOnly: cookieOptions.httpOnly,
+    secure: cookieOptions.secure,
+    sameSite: cookieOptions.sameSite,
+    path: cookieOptions.path,
+  });
+
+  res.status(200).json({
+    success: true,
+    data: null,
   });
 }

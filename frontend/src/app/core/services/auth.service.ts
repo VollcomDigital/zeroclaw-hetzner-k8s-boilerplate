@@ -16,7 +16,6 @@ interface AuthResponse {
   success: boolean;
   data: {
     user: AuthUser;
-    token: string;
   };
 }
 
@@ -30,7 +29,6 @@ interface RegisterPayload extends LoginPayload {
   lastName: string;
 }
 
-const TOKEN_KEY = 'auth_token';
 const USER_KEY = 'auth_user';
 
 function isAuthUser(value: unknown): value is AuthUser {
@@ -64,12 +62,16 @@ export class AuthService {
   constructor(
     private readonly http: HttpClient,
     private readonly router: Router,
-  ) {}
+  ) {
+    queueMicrotask(() => {
+      this.restoreSession();
+    });
+  }
 
   login(payload: LoginPayload): Observable<AuthResponse> {
     return this.http.post<AuthResponse>(`${this.apiUrl}/login`, payload).pipe(
       tap((response) => {
-        this.setSession(response.data.token, response.data.user);
+        this.setSession(response.data.user);
       }),
     );
   }
@@ -77,26 +79,44 @@ export class AuthService {
   register(payload: RegisterPayload): Observable<AuthResponse> {
     return this.http.post<AuthResponse>(`${this.apiUrl}/register`, payload).pipe(
       tap((response) => {
-        this.setSession(response.data.token, response.data.user);
+        this.setSession(response.data.user);
       }),
     );
   }
 
   logout(): void {
-    localStorage.removeItem(TOKEN_KEY);
-    localStorage.removeItem(USER_KEY);
-    this.currentUser.set(null);
+    this.http.post(`${this.apiUrl}/logout`, {}).subscribe({
+      next: () => undefined,
+      error: () => undefined,
+    });
+    this.clearSession();
     void this.router.navigate(['/auth/login']);
   }
 
-  getToken(): string | null {
-    return localStorage.getItem(TOKEN_KEY);
+  handleUnauthorized(): void {
+    this.clearSession();
+    void this.router.navigate(['/auth/login']);
   }
 
-  private setSession(token: string, user: AuthUser): void {
-    localStorage.setItem(TOKEN_KEY, token);
+  private setSession(user: AuthUser): void {
     localStorage.setItem(USER_KEY, JSON.stringify(user));
     this.currentUser.set(user);
+  }
+
+  private clearSession(): void {
+    localStorage.removeItem(USER_KEY);
+    this.currentUser.set(null);
+  }
+
+  private restoreSession(): void {
+    this.http.get<AuthResponse>(`${this.apiUrl}/me`).subscribe({
+      next: (response) => {
+        this.setSession(response.data.user);
+      },
+      error: () => {
+        this.clearSession();
+      },
+    });
   }
 
   private loadStoredUser(): AuthUser | null {

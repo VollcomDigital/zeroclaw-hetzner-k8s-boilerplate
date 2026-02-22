@@ -7,7 +7,7 @@ services:
       - "${MONGO_PORT:-27017}:27017"
     environment:
       MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USER:-admin}
-      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:-password}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:?MONGO_ROOT_PASSWORD is required}
       MONGO_INITDB_DATABASE: ${MONGO_DB_NAME:-mean_app}
     volumes:
       - mongodb_data:/data/db
@@ -32,8 +32,8 @@ services:
     environment:
       NODE_ENV: development
       PORT: 3000
-      MONGODB_URI: mongodb://${MONGO_ROOT_USER:-admin}:${MONGO_ROOT_PASSWORD:-password}@mongodb:27017/${MONGO_DB_NAME:-mean_app}?authSource=admin
-      JWT_SECRET: ${JWT_SECRET:-dev-jwt-secret-change-in-production}
+      MONGODB_URI: mongodb://${MONGO_ROOT_USER:?MONGO_ROOT_USER is required}:${MONGO_ROOT_PASSWORD:?MONGO_ROOT_PASSWORD is required}@mongodb:27017/${MONGO_DB_NAME:?MONGO_DB_NAME is required}?authSource=admin
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
       CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:4200}
       LOG_LEVEL: ${LOG_LEVEL:-debug}
