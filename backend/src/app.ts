@@ -10,7 +10,7 @@ import { NotFoundError } from './core/errors/app-error';
 export function createApp(): Application {
   const app = express();
 
-  app.use(express.json({ limit: '10mb' }));
+  app.use(express.json({ limit: '1mb' }));
   app.use(express.urlencoded({ extended: true }));
 
   app.use(...securityMiddleware());
