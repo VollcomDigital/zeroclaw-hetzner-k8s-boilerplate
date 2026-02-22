@@ -5,7 +5,17 @@ import { AuthService } from '../services/auth.service';
 
 export const authInterceptor: HttpInterceptorFn = (req, next) => {
   const authService = inject(AuthService);
-  const authReq = req.clone({ withCredentials: true });
+  const csrfToken = authService.getCsrfToken();
+  const isUnsafeMethod = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method.toUpperCase());
+
+  let authReq = req.clone({ withCredentials: true });
+  if (isUnsafeMethod && csrfToken) {
+    authReq = authReq.clone({
+      setHeaders: {
+        'X-CSRF-Token': csrfToken,
+      },
+    });
+  }
 
   return next(authReq).pipe(
     catchError((error: HttpErrorResponse) => {

@@ -9,6 +9,16 @@ export function errorHandler(
   res: Response<ApiResponse<null>>,
   _next: NextFunction,
 ): void {
+  const errorWithCode = err as Error & { code?: string };
+  if (errorWithCode.code === 'EBADCSRFTOKEN') {
+    res.status(HttpStatus.FORBIDDEN).json({
+      success: false,
+      data: null,
+      error: { message: 'Invalid CSRF token' },
+    });
+    return;
+  }
+
   if (err instanceof ValidationError) {
     res.status(err.statusCode).json({
       success: false,

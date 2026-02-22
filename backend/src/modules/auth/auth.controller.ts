@@ -104,3 +104,14 @@ export function logout(_req: Request, res: Response<ApiResponse<null>>): void {
     data: null,
   });
 }
+
+export function csrfToken(
+  req: Request,
+  res: Response<ApiResponse<{ csrfToken: string }>>,
+): void {
+  const token = req.csrfToken();
+  res.status(200).json({
+    success: true,
+    data: { csrfToken: token },
+  });
+}

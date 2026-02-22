@@ -1,6 +1,7 @@
 import express, { Application } from 'express';
 import cookieParser from 'cookie-parser';
 import { securityMiddleware } from './core/middleware/security';
+import { csrfProtection } from './core/middleware/csrf';
 import { requestLogger } from './core/middleware/request-logger';
 import { errorHandler } from './core/middleware/error-handler';
 import { healthRoutes } from './modules/health/health.routes';
@@ -14,6 +15,7 @@ export function createApp(): Application {
   app.use(express.json({ limit: '10mb' }));
   app.use(express.urlencoded({ extended: true }));
   app.use(cookieParser());
+  app.use(csrfProtection);
 
   app.use(...securityMiddleware());
 

@@ -1,7 +1,7 @@
 import { Injectable, signal, computed, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Router } from '@angular/router';
-import { Observable, tap } from 'rxjs';
+import { Observable, switchMap, tap, map } from 'rxjs';
 import { environment } from '../../../environments/environment';
 
 interface AuthUser {
@@ -16,6 +16,13 @@ interface AuthResponse {
   success: boolean;
   data: {
     user: AuthUser;
+  };
+}
+
+interface CsrfTokenResponse {
+  success: boolean;
+  data: {
+    csrfToken: string;
   };
 }
 
@@ -50,6 +57,7 @@ function isAuthUser(value: unknown): value is AuthUser {
 @Injectable({ providedIn: 'root' })
 export class AuthService {
   private readonly currentUser = signal<AuthUser | null>(this.loadStoredUser());
+  private readonly csrfToken = signal<string | null>(null);
   private readonly apiUrl = `${environment.apiUrl}/auth`;
   private readonly http = inject(HttpClient);
   private readonly router = inject(Router);
@@ -63,12 +71,17 @@ export class AuthService {
 
   constructor() {
     queueMicrotask(() => {
+      this.refreshCsrfToken().subscribe({
+        next: () => undefined,
+        error: () => undefined,
+      });
       this.restoreSession();
     });
   }
 
   login(payload: LoginPayload): Observable<AuthResponse> {
-    return this.http.post<AuthResponse>(`${this.apiUrl}/login`, payload).pipe(
+    return this.refreshCsrfToken().pipe(
+      switchMap(() => this.http.post<AuthResponse>(`${this.apiUrl}/login`, payload)),
       tap((response) => {
         this.setSession(response.data.user);
       }),
@@ -76,7 +89,8 @@ export class AuthService {
   }
 
   register(payload: RegisterPayload): Observable<AuthResponse> {
-    return this.http.post<AuthResponse>(`${this.apiUrl}/register`, payload).pipe(
+    return this.refreshCsrfToken().pipe(
+      switchMap(() => this.http.post<AuthResponse>(`${this.apiUrl}/register`, payload)),
       tap((response) => {
         this.setSession(response.data.user);
       }),
@@ -84,7 +98,11 @@ export class AuthService {
   }
 
   logout(): void {
-    this.http.post(`${this.apiUrl}/logout`, {}).subscribe({
+    const logoutRequest$ = this.csrfToken()
+      ? this.http.post(`${this.apiUrl}/logout`, {})
+      : this.refreshCsrfToken().pipe(switchMap(() => this.http.post(`${this.apiUrl}/logout`, {})));
+
+    logoutRequest$.subscribe({
       next: () => undefined,
       error: () => undefined,
     });
@@ -97,6 +115,10 @@ export class AuthService {
     void this.router.navigate(['/auth/login']);
   }
 
+  getCsrfToken(): string | null {
+    return this.csrfToken();
+  }
+
   private setSession(user: AuthUser): void {
     localStorage.setItem(USER_KEY, JSON.stringify(user));
     this.currentUser.set(user);
@@ -105,6 +127,15 @@ export class AuthService {
   private clearSession(): void {
     localStorage.removeItem(USER_KEY);
     this.currentUser.set(null);
+  }
+
+  private refreshCsrfToken(): Observable<string> {
+    return this.http.get<CsrfTokenResponse>(`${this.apiUrl}/csrf-token`).pipe(
+      tap((response) => {
+        this.csrfToken.set(response.data.csrfToken);
+      }),
+      map((response) => response.data.csrfToken),
+    );
   }
 
   private restoreSession(): void {
