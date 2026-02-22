@@ -20,7 +20,7 @@ export function authenticate(req: Request, _res: Response, next: NextFunction): 
   const bearerToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
   const cookieToken =
     req.cookies && typeof req.cookies[AUTH_COOKIE_NAME] === 'string'
-      ? (req.cookies[AUTH_COOKIE_NAME] as string)
+      ? req.cookies[AUTH_COOKIE_NAME]
       : null;
   const token = bearerToken ?? cookieToken;
 

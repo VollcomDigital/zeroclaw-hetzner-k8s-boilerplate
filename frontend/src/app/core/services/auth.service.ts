@@ -1,4 +1,4 @@
-import { Injectable, signal, computed } from '@angular/core';
+import { Injectable, signal, computed, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Router } from '@angular/router';
 import { Observable, tap } from 'rxjs';
@@ -51,6 +51,8 @@ function isAuthUser(value: unknown): value is AuthUser {
 export class AuthService {
   private readonly currentUser = signal<AuthUser | null>(this.loadStoredUser());
   private readonly apiUrl = `${environment.apiUrl}/auth`;
+  private readonly http = inject(HttpClient);
+  private readonly router = inject(Router);
 
   readonly user = this.currentUser.asReadonly();
   readonly isAuthenticated = computed(() => this.currentUser() !== null);
@@ -59,10 +61,7 @@ export class AuthService {
     return user ? `${user.firstName} ${user.lastName}` : '';
   });
 
-  constructor(
-    private readonly http: HttpClient,
-    private readonly router: Router,
-  ) {
+  constructor() {
     queueMicrotask(() => {
       this.restoreSession();
     });
