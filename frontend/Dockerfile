@@ -21,7 +21,7 @@ COPY . .
 RUN npx ng build --configuration=production
 
 # ── Stage 5: Production (Nginx) ──────────────────────
-FROM nginx:1.27-alpine AS production
+FROM nginx:1.29-alpine AS production
 RUN rm -rf /usr/share/nginx/html/*
 COPY --from=build /app/dist/frontend/browser /usr/share/nginx/html
 COPY nginx/nginx.conf /etc/nginx/conf.d/default.conf
