@@ -4,7 +4,15 @@ Thanks for contributing to this project.
 
 ## Development Setup
 
-1. Install dependencies:
+1. Install dependencies from the repository root:
+
+```bash
+npm install
+npm install --prefix backend
+npm install --prefix frontend
+```
+
+Optional shorthand:
 
 ```bash
 npm run install:all
