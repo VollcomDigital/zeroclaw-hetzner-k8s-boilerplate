@@ -1,5 +1,5 @@
 # ── Stage 1: Base ──────────────────────────────────────
-FROM node:20-alpine AS base
+FROM node:25-alpine AS base
 WORKDIR /app
 
 # ── Stage 2: Dependencies ─────────────────────────────
