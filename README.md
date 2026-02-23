@@ -1,185 +1,162 @@
-# Cloud-Native MEAN Stack Boilerplate
+# zeroclaw-hetzner-k8s-boilerplate
 
-Production-ready **MongoDB + Express + Angular + Node.js** boilerplate built with **TypeScript**, **Docker**, and the **12-Factor App** methodology.
+Kubernetes manifests for deploying a **24/7 personal ZeroClaw AI assistant** on a Hetzner Cloud Kubernetes cluster, secured behind a **Cloudflare Tunnel** and routed through an internal **LiteLLM AI Gateway**.
 
-## Tech Stack
+---
 
-| Layer      | Technology                                      |
-|------------|--------------------------------------------------|
-| Database   | MongoDB 7 + Mongoose ODM                        |
-| Backend    | Node.js 20+, Express 4, TypeScript (strict)     |
-| Frontend   | Angular 19, Standalone Components, Signals, SCSS |
-| Auth       | JWT + HttpOnly cookie session + bcryptjs         |
-| Validation | Zod (backend), Angular Forms (frontend)          |
-| Logging    | Pino (structured JSON logging)                   |
-| Testing    | Jest (backend), Karma/Jasmine (frontend)         |
-| DevOps     | Docker, Docker Compose, GitHub Actions           |
-
-## Project Structure
+## Architecture Overview
 
 ```
-.
-├── .github/workflows/ci.yml     # CI pipeline (lint, test, build, Docker)
-├── .husky/                       # Git hooks (pre-commit, commit-msg)
-├── backend/
-│   ├── src/
-│   │   ├── config/               # Env validation (Zod), DB connection
-│   │   ├── core/
-│   │   │   ├── errors/           # Custom error classes (AppError)
-│   │   │   ├── logger/           # Pino structured logger
-│   │   │   └── middleware/       # Security, error handler, request logger
-│   │   ├── modules/
-│   │   │   ├── auth/             # JWT auth (register, login, middleware)
-│   │   │   ├── health/           # Liveness + Readiness probes
-│   │   │   └── users/            # User CRUD (model, service, controller)
-│   │   └── shared/               # Response types, async handler utility
-│   ├── tests/                    # Unit + integration tests
-│   ├── Dockerfile                # Multi-stage (dev + production)
-│   └── .env.example
-├── frontend/
-│   ├── src/
-│   │   ├── app/
-│   │   │   ├── core/             # Auth service, interceptor, guards
-│   │   │   ├── features/         # Home, Auth (Login/Register), Dashboard
-│   │   │   └── shared/           # Header, Footer, Loading components
-│   │   └── environments/         # Dev + production environment configs
-│   ├── nginx/nginx.conf          # Production Nginx with SPA fallback
-│   ├── Dockerfile                # Multi-stage (dev + Nginx production)
-│   └── .env.example
-├── docker-compose.yml            # Full stack orchestration
-├── .prettierrc                   # Shared Prettier config
-├── .commitlintrc.json            # Conventional commits enforcement
-└── .lintstagedrc.json            # Lint-staged config
+Internet
+  │
+  ▼
+Cloudflare Edge (TLS termination, Zero Trust)
+  │  Cloudflare Tunnel
+  ▼
+┌──────────────────────────────────────┐
+│  Hetzner K8s Cluster                 │
+│  ┌────────────────────────────────┐  │
+│  │  Pod: zeroclaw-assistant       │  │
+│  │  ┌──────────┐ ┌────────────┐  │  │
+│  │  │ zeroclaw │ │ cloudflared│  │  │
+│  │  │ (Rust)   │ │ (sidecar)  │  │  │
+│  │  └────┬─────┘ └────────────┘  │  │
+│  └───────┼────────────────────────┘  │
+│          │                           │
+│          ▼                           │
+│  LiteLLM AI Gateway                 │
+│  (cost tracking, rate limiting,     │
+│   model routing)                    │
+└──────────────────────────────────────┘
 ```
+
+**Key design decisions:**
+
+- **No public ingress.** ZeroClaw never binds to a public IP. All traffic flows through a Cloudflare Tunnel sidecar, which establishes an outbound-only connection to Cloudflare's edge.
+- **Aggressive resource limits.** The Rust binary is extremely lightweight (10Mi RAM request, 50Mi limit) making it cheap to run on small Hetzner nodes.
+- **AI Gateway routing.** All LLM API calls are proxied through a LiteLLM gateway for centralized cost tracking, rate limiting, and model routing.
+
+---
+
+## Repository Structure
+
+```
+k8s/
+└── apps/
+    └── zeroclaw-assistant/
+        ├── kustomization.yaml   # Kustomize entrypoint
+        ├── namespace.yaml       # zeroclaw namespace
+        ├── deployment.yaml      # ZeroClaw pod (Rust app + cloudflared sidecar)
+        ├── configmap.yaml       # Non-sensitive config (gateway URL)
+        └── secret.yaml          # Placeholder secrets (tunnel token, API key)
+```
+
+---
+
+## Prerequisites
+
+| Requirement | Details |
+|---|---|
+| **Hetzner K8s cluster** | A running cluster with `kubectl` access configured |
+| **Cloudflare Tunnel** | A tunnel created in the [Cloudflare Zero Trust dashboard](https://one.dash.cloudflare.com/) with a valid token |
+| **LiteLLM Gateway** | An accessible LiteLLM proxy instance and a virtual API key |
+| **Container image** | The ZeroClaw Rust binary published to a registry (default: `ghcr.io/yourorg/zeroclaw-assistant`) |
+
+---
 
 ## Quick Start
 
-### Prerequisites
+### 1. Configure Secrets
 
-- Node.js >= 20
-- npm >= 10
-- Docker & Docker Compose (for containerized development)
+Edit `k8s/apps/zeroclaw-assistant/secret.yaml` and replace the placeholder values:
 
-### Option 1: Docker Compose (Recommended)
+```yaml
+stringData:
+  cloudflare_tunnel_token: "<your-tunnel-token>"
+  litellm_api_key: "<your-virtual-api-key>"
+```
+
+> **Production note:** Do not commit real secrets. Use [Sealed Secrets](https://github.com/bitnami-labs/sealed-secrets), [External Secrets Operator](https://external-secrets.io/), or inject via CI/CD.
+
+### 2. Configure the Gateway URL
+
+Edit `k8s/apps/zeroclaw-assistant/configmap.yaml` if your LiteLLM gateway URL differs from the default:
+
+```yaml
+data:
+  litellm_gateway_url: "https://ai-gateway.yourcompany.com"
+```
+
+### 3. Update the Container Image
+
+In `k8s/apps/zeroclaw-assistant/deployment.yaml`, replace the image reference with your actual registry path and tag:
+
+```yaml
+image: ghcr.io/yourorg/zeroclaw-assistant:v0.1.0
+```
+
+### 4. Deploy
 
 ```bash
-# Configure required Docker secrets
-cp .env.example .env
-
-# Clone and start the full stack
-docker compose up -d
-
-# Backend API:   http://localhost:3000
-# Frontend App:  http://localhost:4200
-# MongoDB:       localhost:27017
+kubectl apply -k k8s/apps/zeroclaw-assistant/
 ```
 
-### Option 2: Local Development
+### 5. Verify
 
 ```bash
-# Install all dependencies
-npm run install:all
-
-# Copy environment files
-cp backend/.env.example backend/.env
-
-# Start backend (requires MongoDB running locally)
-npm run dev:backend
-
-# Start frontend (in another terminal)
-npm run dev:frontend
+kubectl -n zeroclaw get pods
+kubectl -n zeroclaw logs deploy/zeroclaw-assistant -c zeroclaw
+kubectl -n zeroclaw logs deploy/zeroclaw-assistant -c cloudflared
 ```
 
-## API Endpoints
+---
 
-### Health Checks (Kubernetes-ready)
+## Resource Budget
 
-| Method | Endpoint              | Description            |
-|--------|-----------------------|------------------------|
-| GET    | `/health/liveness`    | Process alive check    |
-| GET    | `/health/readiness`   | Service ready check    |
+| Container | CPU Request | CPU Limit | Memory Request | Memory Limit |
+|---|---|---|---|---|
+| `zeroclaw` | 10m | 100m | 10Mi | 50Mi |
+| `cloudflared` | 10m | 50m | 32Mi | 64Mi |
+| **Pod total** | **20m** | **150m** | **42Mi** | **114Mi** |
 
-### Authentication
+The entire pod fits comfortably on the smallest Hetzner node types (CX11 / CAX11).
 
-| Method | Endpoint              | Description            |
-|--------|-----------------------|------------------------|
-| POST   | `/api/v1/auth/register` | Register new user    |
-| POST   | `/api/v1/auth/login`    | Login (sets HttpOnly auth cookie)  |
-| GET    | `/api/v1/auth/me`       | Get current user     |
-| POST   | `/api/v1/auth/logout`   | Clear auth session cookie |
+---
 
-### Users (Protected)
+## Security
 
-| Method | Endpoint              | Description            |
-|--------|-----------------------|------------------------|
-| GET    | `/api/v1/users`         | List users (admin only, paginated) |
-| GET    | `/api/v1/users/:id`     | Get own user (or admin any user)   |
-| PUT    | `/api/v1/users/:id`     | Update own user (or admin any user) |
-| DELETE | `/api/v1/users/:id`     | Soft-delete own user (or admin any user) |
+- **Zero Trust networking** — No `LoadBalancer` or `NodePort` services. All ingress is via Cloudflare Tunnel.
+- **Read-only root filesystem** — Both containers run with `readOnlyRootFilesystem: true`.
+- **Non-root execution** — Both containers run as unprivileged users.
+- **Capabilities dropped** — All Linux capabilities are dropped.
+- **Secret rotation** — Secrets are referenced from a Kubernetes Secret object; rotate by updating the Secret and restarting the pod.
 
-### Response Format
+---
 
-All endpoints return a consistent JSON structure:
+## Customization
 
-```json
-{
-  "success": true,
-  "data": { ... },
-  "error": null
-}
+### Adding more assistants
+
+Duplicate the `k8s/apps/zeroclaw-assistant/` directory, update the names and labels, and add the new directory to your Kustomize overlay or ArgoCD `Application`.
+
+### Scaling
+
+Increase `spec.replicas` in `deployment.yaml`. The Cloudflare Tunnel connector handles load balancing across replicas automatically.
+
+### Monitoring
+
+Add Prometheus annotations to the pod template if your cluster runs a Prometheus stack:
+
+```yaml
+metadata:
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "8080"
+    prometheus.io/path: "/metrics"
 ```
 
-## Environment Variables
-
-All backend configuration is validated at startup using **Zod**. See `backend/.env.example`:
-
-| Variable       | Required | Default              | Description                |
-|---------------|----------|----------------------|----------------------------|
-| `NODE_ENV`    | No       | `development`        | Runtime environment        |
-| `PORT`        | No       | `3000`               | Server port                |
-| `MONGODB_URI` | Yes      | —                    | MongoDB connection string  |
-| `JWT_SECRET`  | Yes      | —                    | JWT signing secret (min 16 chars) |
-| `JWT_EXPIRES_IN` | No       | `7d`                 | Token expiration           |
-| `CORS_ORIGIN` | No       | `http://localhost:4200` | Allowed CORS origin     |
-| `LOG_LEVEL`   | No       | `info`               | Pino log level             |
-
-## Testing
-
-```bash
-# Backend tests (Jest)
-npm run test:backend
-
-# Frontend tests (Karma)
-npm run test:frontend
-
-# Run all tests
-npm run test
-```
-
-## Scripts
-
-| Script               | Description                                  |
-|---------------------|----------------------------------------------|
-| `npm run dev:backend`  | Start backend in development mode           |
-| `npm run dev:frontend` | Start Angular dev server                    |
-| `npm run build`        | Build both backend and frontend             |
-| `npm run test`         | Run all tests                               |
-| `npm run lint`         | Lint both projects                          |
-| `npm run docker:up`    | Start Docker Compose stack                  |
-| `npm run docker:down`  | Stop Docker Compose stack                   |
-
-## Architecture Decisions
-
-- **12-Factor App**: Config via env vars, stateless processes, port binding, dev/prod parity
-- **Domain-Driven Modules**: Each feature (auth, users, health) is self-contained
-- **Standalone Components**: No NgModules — Angular 21 standalone architecture throughout
-- **Signals**: Modern reactive state management in Angular services
-- **Lazy Loading**: All feature routes are code-split and lazy-loaded
-- **Structured Logging**: JSON logs via Pino for cloud-native log aggregation
-- **Health Probes**: Kubernetes-compatible liveness and readiness endpoints
-- **Security**: Helmet, CORS, auth-specific + global rate limiting, RBAC, ownership checks, bcrypt password hashing, HttpOnly cookie auth
-- **Conventional Commits**: Enforced via Husky + commitlint
+---
 
 ## License
 
-MIT
+See [LICENSE](LICENSE) for details.
