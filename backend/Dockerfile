@@ -1,5 +1,5 @@
 # ── Stage 1: Base ──────────────────────────────────────
-FROM node:20-alpine AS base
+FROM node:25-alpine AS base
 WORKDIR /app
 RUN apk add --no-cache wget
 
@@ -23,7 +23,7 @@ RUN npm run build
 RUN npm ci --omit=dev --ignore-scripts
 
 # ── Stage 5: Production ──────────────────────────────
-FROM node:20-alpine AS production
+FROM node:25-alpine AS production
 RUN apk add --no-cache wget dumb-init
 ENV NODE_ENV=production
 WORKDIR /app
