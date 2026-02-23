@@ -8,7 +8,7 @@ Production-ready **MongoDB + Express + Angular + Node.js** boilerplate built wit
 |------------|--------------------------------------------------|
 | Database   | MongoDB 7 + Mongoose ODM                        |
 | Backend    | Node.js 20+, Express 4, TypeScript (strict)     |
-| Frontend   | Angular 21, Standalone Components, Signals, SCSS |
+| Frontend   | Angular 19, Standalone Components, Signals, SCSS |
 | Auth       | JWT + HttpOnly cookie session + bcryptjs         |
 | Validation | Zod (backend), Angular Forms (frontend)          |
 | Logging    | Pino (structured JSON logging)                   |
