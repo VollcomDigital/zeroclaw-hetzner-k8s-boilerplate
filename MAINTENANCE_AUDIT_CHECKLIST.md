@@ -63,7 +63,7 @@
 
 **No critical findings for:** `eval()`, `Function()`, hardcoded API keys/secrets, SQL/NoSQL injection vectors, or XSS (`innerHTML`, `dangerouslySetInnerHTML`, `bypassSecurityTrust`).
 
-- [ ] **Needs Manual Check:** `backend/.env.example` contains `MONGODB_URI=mongodb://admin:password@localhost:27017/mean_app` — ensure users understand these are placeholders and must be changed. Consider adding a prominent comment: `# WARNING: Replace credentials before use in any environment.`
+- [ ] **Needs Manual Check:** backend/.env.example contains MONGODB_URI=mongodb://admin:password@localhost:27017/mean_app?authSource=admin — ensure users understand these are placeholders and must be changed. Consider adding a prominent comment: # WARNING: Replace credentials before use in any environment.
 - [ ] **Needs Manual Check:** docker-compose.yml line 36 uses JWT_SECRET: ${JWT_SECRET:-dev-jwt-secret-change-in-production} as fallback. Document that production deployments MUST set JWT_SECRET via env; never rely on the default.
 
 ---
