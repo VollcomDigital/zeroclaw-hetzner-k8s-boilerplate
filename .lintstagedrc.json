@@ -1,6 +1,0 @@
-{
-  "backend/src/**/*.ts": ["eslint --fix", "prettier --write"],
-  "frontend/src/**/*.ts": ["prettier --write"],
-  "frontend/src/**/*.html": ["prettier --write"],
-  "frontend/src/**/*.scss": ["prettier --write"]
-}
