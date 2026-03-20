@@ -20,7 +20,7 @@
 - [x] Policy engine for tools, secrets, workflows
 - [x] Adaptive model routing layer
 - [x] GPU utilization and cost governance
-- [ ] PII-aware vector memory lifecycle
+- [x] PII-aware vector memory lifecycle
 - [ ] Progressive rollout for workflows and prompts
 - [ ] Failure-mode automation
 

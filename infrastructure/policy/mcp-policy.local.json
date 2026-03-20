@@ -2,6 +2,7 @@
   "version": 1,
   "default_action": "allow",
   "tools": {
+    "plan_vector_memory_lifecycle": {},
     "trigger_n8n_workflow": {
       "allowed_webhook_ids": [
         "*"
