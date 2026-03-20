@@ -2,7 +2,7 @@
 
 ## Phase 1: Critical Fixes (Immediate)
 - [x] Define one canonical platform narrative
-- [ ] Close the MCP trust gap
+- [x] Close the MCP trust gap
 - [ ] Make Entra policy mandatory in prod
 - [ ] Eliminate floating production artifacts
 - [ ] Add CI baseline immediately

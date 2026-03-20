@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 import logging
 import os
@@ -17,6 +18,12 @@ from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider as SDKTracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor, ConsoleSpanExporter
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+from starlette.applications import Starlette
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
+from starlette.responses import JSONResponse
+from starlette.routing import Mount, Route
+import uvicorn
 
 type JSONPrimitive = str | int | float | bool | None
 type JSONValue = JSONPrimitive | dict[str, "JSONValue"] | list["JSONValue"]
@@ -42,6 +49,7 @@ class BridgeSettings(BaseModel):
     n8n_base_url: str = "http://n8n:5678"
     op_connect_url: str = "http://1password-connect-api:8080"
     op_connect_token: str | None = None
+    bridge_access_token: str | None = None
     request_timeout_seconds: float = Field(default=15.0, gt=0)
     idempotency_ttl_seconds: float = Field(default=300.0, ge=0)
 
@@ -98,6 +106,7 @@ def get_settings() -> BridgeSettings:
         n8n_base_url=os.getenv("N8N_BASE_URL", "http://n8n:5678"),
         op_connect_url=os.getenv("OP_CONNECT_URL", "http://1password-connect-api:8080"),
         op_connect_token=os.getenv("OP_CONNECT_TOKEN"),
+        bridge_access_token=os.getenv("BRIDGE_ACCESS_TOKEN"),
         request_timeout_seconds=float(os.getenv("BRIDGE_REQUEST_TIMEOUT_SECONDS", "15")),
         idempotency_ttl_seconds=float(os.getenv("BRIDGE_IDEMPOTENCY_TTL_SECONDS", "300")),
     )
@@ -145,6 +154,79 @@ def parse_response_body(response: httpx.Response) -> object:
     if "application/json" in content_type:
         return response.json()
     return response.text
+
+
+def verify_bearer_token(authorization_header: str | None, *, expected_token: str) -> bool:
+    if not authorization_header:
+        return False
+
+    scheme, _, token = authorization_header.partition(" ")
+    if scheme != "Bearer" or not token:
+        return False
+
+    return hmac.compare_digest(token, expected_token)
+
+
+def require_bridge_access_token(settings: BridgeSettings) -> str:
+    if not settings.bridge_access_token:
+        error_message = "BRIDGE_ACCESS_TOKEN must be configured before starting the MCP bridge."
+        log_event("error", "bridge_auth.configuration_error", error=error_message)
+        raise RuntimeError(error_message)
+
+    return settings.bridge_access_token
+
+
+class BridgeAuthMiddleware(BaseHTTPMiddleware):
+    def __init__(self, app: Starlette, *, expected_token: str, protected_path: str) -> None:
+        super().__init__(app)
+        self._expected_token = expected_token
+        self._protected_path = protected_path.rstrip("/") or "/"
+
+    async def dispatch(self, request: Request, call_next: object) -> JSONResponse | object:
+        path = request.url.path
+        if path == "/healthz" or not path.startswith(self._protected_path):
+            return await call_next(request)
+
+        with TRACER.start_as_current_span("mcp.bridge_auth") as span:
+            authorized = verify_bearer_token(
+                request.headers.get("Authorization"),
+                expected_token=self._expected_token,
+            )
+            span.set_attribute("bridge.auth.authorized", authorized)
+            span.set_attribute("bridge.auth.path", path)
+            if authorized:
+                return await call_next(request)
+
+            log_event(
+                "warning",
+                "bridge_auth.denied",
+                path=path,
+                client_host=request.client.host if request.client else None,
+            )
+            return JSONResponse(
+                status_code=401,
+                content={"detail": "Missing or invalid bridge bearer token."},
+            )
+
+
+async def healthcheck(_: Request) -> JSONResponse:
+    return JSONResponse({"status": "ok"})
+
+
+def build_protected_http_app(app: Starlette, settings: BridgeSettings, *, protected_path: str) -> Starlette:
+    expected_token = require_bridge_access_token(settings)
+    protected_app = Starlette(
+        routes=[
+            Route("/healthz", endpoint=healthcheck),
+            Mount("/", app=app),
+        ]
+    )
+    protected_app.add_middleware(
+        BridgeAuthMiddleware,
+        expected_token=expected_token,
+        protected_path=protected_path,
+    )
+    return protected_app
 
 
 def select_field(item: Mapping[str, object], field_label: str) -> Mapping[str, object] | None:
@@ -362,8 +444,26 @@ async def get_1password_secret(
 def main() -> None:
     settings = get_settings()
     configure_telemetry(os.getenv("OTEL_SERVICE_NAME", SERVICE_NAME))
-    log_event("info", "mcp_server.starting", host=settings.host, port=settings.port)
-    MCP_SERVER.run(transport="streamable-http", host=settings.host, port=settings.port)
+    MCP_SERVER.settings.host = settings.host
+    MCP_SERVER.settings.port = settings.port
+    protected_app = build_protected_http_app(
+        MCP_SERVER.streamable_http_app(),
+        settings,
+        protected_path=MCP_SERVER.settings.streamable_http_path,
+    )
+    log_event(
+        "info",
+        "mcp_server.starting",
+        host=settings.host,
+        port=settings.port,
+        protected_path=MCP_SERVER.settings.streamable_http_path,
+    )
+    uvicorn.run(
+        protected_app,
+        host=settings.host,
+        port=settings.port,
+        log_level=MCP_SERVER.settings.log_level.lower(),
+    )
 
 
 if __name__ == "__main__":

@@ -3,15 +3,20 @@ from __future__ import annotations
 import httpx
 import pytest
 import respx
+from starlette.applications import Starlette
+from starlette.responses import JSONResponse
 
 from n8n_bridge.server import (
     BridgeSettings,
     IdempotencyCache,
     SecretRequest,
     TriggerWorkflowRequest,
+    build_protected_http_app,
     build_idempotency_key,
+    require_bridge_access_token,
     get_1password_secret_impl,
     trigger_n8n_workflow_impl,
+    verify_bearer_token,
 )
 
 
@@ -19,6 +24,44 @@ def test_build_idempotency_key_is_order_insensitive() -> None:
     first = build_idempotency_key("workflow-demo", {"alpha": 1, "beta": 2})
     second = build_idempotency_key("workflow-demo", {"beta": 2, "alpha": 1})
     assert first == second
+
+
+def test_verify_bearer_token_rejects_missing_and_malformed_headers() -> None:
+    assert verify_bearer_token(None, expected_token="bridge-token") is False
+    assert verify_bearer_token("", expected_token="bridge-token") is False
+    assert verify_bearer_token("Basic bridge-token", expected_token="bridge-token") is False
+    assert verify_bearer_token("Bearer wrong-token", expected_token="bridge-token") is False
+    assert verify_bearer_token("Bearer bridge-token", expected_token="bridge-token") is True
+
+
+def test_require_bridge_access_token_raises_for_missing_configuration() -> None:
+    settings = BridgeSettings(bridge_access_token=None)
+
+    with pytest.raises(RuntimeError, match="BRIDGE_ACCESS_TOKEN must be configured"):
+        require_bridge_access_token(settings)
+
+
+@pytest.mark.asyncio
+async def test_build_protected_http_app_blocks_unauthorized_mcp_requests() -> None:
+    app = build_protected_http_app(
+        Starlette(),
+        BridgeSettings(bridge_access_token="bridge-token"),
+        protected_path="/mcp",
+    )
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as client:
+        unauthorized = await client.get("/mcp")
+        health = await client.get("/healthz")
+        authorized = await client.get("/mcp", headers={"Authorization": "Bearer bridge-token"})
+
+    assert unauthorized.status_code == 401
+    assert unauthorized.json()["detail"] == "Missing or invalid bridge bearer token."
+    assert health.status_code == 200
+    assert health.json()["status"] == "ok"
+    assert authorized.status_code == 404
 
 
 @pytest.mark.asyncio

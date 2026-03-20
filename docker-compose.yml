@@ -261,6 +261,7 @@ services:
     build:
       context: ./mcp-servers/n8n-bridge
     environment:
+      BRIDGE_ACCESS_TOKEN: ${BRIDGE_ACCESS_TOKEN}
       MCP_HOST: 0.0.0.0
       MCP_PORT: "8000"
       N8N_BASE_URL: http://n8n:5678
