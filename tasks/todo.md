@@ -28,5 +28,5 @@
 - [x] Full confidential-agent architecture
 - [x] Agent control plane
 - [x] Compliance-native AI platform
-- [ ] Autonomous optimization layer
+- [x] Autonomous optimization layer
 - [ ] Hybrid local/prod sovereignty mode

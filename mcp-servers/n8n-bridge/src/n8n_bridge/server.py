@@ -60,6 +60,7 @@ class BridgeSettings(BaseModel):
     confidential_execution_file_path: str | None = None
     agent_control_plane_file_path: str | None = None
     compliance_platform_file_path: str | None = None
+    autonomous_optimization_file_path: str | None = None
     request_timeout_seconds: float = Field(default=15.0, gt=0)
     idempotency_ttl_seconds: float = Field(default=300.0, ge=0)
 
@@ -310,6 +311,39 @@ class CompliancePlatformConfig(BaseModel):
     regulations: dict[str, ComplianceRegulationRule] = Field(default_factory=dict)
 
 
+class AutonomousOptimizationTarget(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    max_p95_latency_ms: int = Field(ge=1)
+    max_error_rate: float = Field(ge=0)
+    max_cost_per_1k_tokens_usd: float = Field(ge=0)
+
+
+class AutonomousOptimizationRoute(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    current_p95_latency_ms: int = Field(ge=0)
+    current_error_rate: float = Field(ge=0)
+    current_cost_per_1k_tokens_usd: float = Field(ge=0)
+    recommended_priority_delta: int = 0
+
+
+class AutonomousOptimizationConfig(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    version: int = 1
+    targets: dict[str, AutonomousOptimizationTarget] = Field(default_factory=dict)
+    routes: dict[str, AutonomousOptimizationRoute] = Field(default_factory=dict)
+
+
+class AutonomousOptimizationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    objective_key: str = Field(min_length=1)
+    route_name: str = Field(min_length=1)
+    subject_scope: str = Field(min_length=1)
+
+
 class IdempotencyCache:
     def __init__(self, ttl_seconds: float) -> None:
         self._ttl_seconds = ttl_seconds
@@ -355,6 +389,7 @@ def get_settings() -> BridgeSettings:
         confidential_execution_file_path=os.getenv("BRIDGE_CONFIDENTIAL_EXECUTION_FILE_PATH"),
         agent_control_plane_file_path=os.getenv("BRIDGE_AGENT_CONTROL_PLANE_FILE_PATH"),
         compliance_platform_file_path=os.getenv("BRIDGE_COMPLIANCE_PLATFORM_FILE_PATH"),
+        autonomous_optimization_file_path=os.getenv("BRIDGE_AUTONOMOUS_OPTIMIZATION_FILE_PATH"),
         request_timeout_seconds=float(os.getenv("BRIDGE_REQUEST_TIMEOUT_SECONDS", "15")),
         idempotency_ttl_seconds=float(os.getenv("BRIDGE_IDEMPOTENCY_TTL_SECONDS", "300")),
     )
@@ -1099,6 +1134,69 @@ def build_compliance_platform_engine(settings: BridgeSettings) -> CompliancePlat
     if settings.compliance_platform_file_path:
         return _cached_compliance_platform_engine(settings.compliance_platform_file_path)
     return CompliancePlatformEngine(CompliancePlatformConfig())
+
+
+class AutonomousOptimizationEngine:
+    def __init__(self, config: AutonomousOptimizationConfig) -> None:
+        self._config = config
+
+    def plan(self, request: AutonomousOptimizationRequest) -> dict[str, JSONValue]:
+        objective = self._config.targets.get(request.objective_key)
+        if objective is None:
+            raise RuntimeError(f"Unknown optimization objective '{request.objective_key}'.")
+
+        route = self._config.routes.get(request.route_name)
+        if route is None:
+            raise RuntimeError(f"Unknown optimization route '{request.route_name}'.")
+
+        reasons: list[str] = []
+        action = "retain_route"
+        budget_adjustment_required = False
+
+        if route.current_p95_latency_ms > objective.max_p95_latency_ms:
+            action = "deprioritize_route"
+            reasons.append("latency target exceeded")
+
+        if route.current_cost_per_1k_tokens_usd > objective.max_cost_per_1k_tokens_usd:
+            action = "cap_route_budget"
+            budget_adjustment_required = True
+            reasons.append("cost target exceeded")
+
+        if route.current_error_rate > objective.max_error_rate:
+            action = "deprioritize_route"
+            reasons.append("error-rate target exceeded")
+
+        if not reasons:
+            reasons.append("route remains within optimization targets")
+
+        return {
+            "objective_key": request.objective_key,
+            "route_name": request.route_name,
+            "action": action,
+            "recommended_priority_delta": route.recommended_priority_delta,
+            "budget_adjustment_required": budget_adjustment_required,
+            "reasons": reasons,
+            "replay_fingerprint": build_replay_fingerprint(
+                "plan_autonomous_optimization",
+                request.model_dump(mode="json"),
+            ),
+        }
+
+
+def _load_autonomous_optimization_file(autonomous_optimization_file_path: str) -> AutonomousOptimizationConfig:
+    payload = json.loads(Path(autonomous_optimization_file_path).read_text(encoding="utf-8"))
+    return AutonomousOptimizationConfig.model_validate(payload)
+
+
+@lru_cache(maxsize=8)
+def _cached_autonomous_optimization_engine(autonomous_optimization_file_path: str) -> AutonomousOptimizationEngine:
+    return AutonomousOptimizationEngine(_load_autonomous_optimization_file(autonomous_optimization_file_path))
+
+
+def build_autonomous_optimization_engine(settings: BridgeSettings) -> AutonomousOptimizationEngine:
+    if settings.autonomous_optimization_file_path:
+        return _cached_autonomous_optimization_engine(settings.autonomous_optimization_file_path)
+    return AutonomousOptimizationEngine(AutonomousOptimizationConfig())
 
 
 def build_replay_fingerprint(operation: str, request: Mapping[str, JSONValue]) -> str:
@@ -1971,6 +2069,63 @@ async def plan_compliance_case_impl(
         return compliance_result
 
 
+async def plan_autonomous_optimization_impl(
+    request: AutonomousOptimizationRequest,
+    settings: BridgeSettings,
+) -> dict[str, JSONValue]:
+    request_id = build_request_id(
+        "plan_autonomous_optimization",
+        canonicalize_payload(request.model_dump(mode="json")),
+    )
+
+    with TRACER.start_as_current_span("mcp.plan_autonomous_optimization") as span:
+        span.set_attribute("bridge.request_id", request_id)
+        span.set_attribute("bridge.optimization.objective_key", request.objective_key)
+        span.set_attribute("bridge.optimization.route_name", request.route_name)
+        log_event(
+            "info",
+            "plan_autonomous_optimization.start",
+            request_id=request_id,
+            objective_key=request.objective_key,
+            route_name=request.route_name,
+            subject_scope=request.subject_scope,
+        )
+        enforce_policy(
+            settings,
+            tool_name="plan_autonomous_optimization",
+            request_id=request_id,
+            attributes={
+                "objective_key": request.objective_key,
+                "route_name": request.route_name,
+            },
+        )
+
+        optimization_result = build_autonomous_optimization_engine(settings).plan(request)
+        optimization_result["request_id"] = request_id
+        write_audit_record(
+            settings,
+            operation="plan_autonomous_optimization",
+            request_id=request_id,
+            request=request.model_dump(mode="json"),
+            outcome={
+                "action": optimization_result["action"],
+                "recommended_priority_delta": optimization_result["recommended_priority_delta"],
+                "budget_adjustment_required": optimization_result["budget_adjustment_required"],
+                "policy_decision": "allow",
+            },
+        )
+        log_event(
+            "info",
+            "plan_autonomous_optimization.completed",
+            request_id=request_id,
+            objective_key=request.objective_key,
+            route_name=request.route_name,
+            action=optimization_result["action"],
+            budget_adjustment_required=optimization_result["budget_adjustment_required"],
+        )
+        return optimization_result
+
+
 DEFAULT_CACHE = IdempotencyCache(ttl_seconds=get_settings().idempotency_ttl_seconds)
 
 
@@ -2142,6 +2297,22 @@ async def plan_compliance_case(
         legal_hold=legal_hold,
     )
     return await plan_compliance_case_impl(request, settings)
+
+
+@MCP_SERVER.tool()
+async def plan_autonomous_optimization(
+    objective_key: str,
+    route_name: str,
+    subject_scope: str,
+) -> dict[str, JSONValue]:
+    """Plan deterministic optimization actions for a route under a named objective."""
+    settings = get_settings()
+    request = AutonomousOptimizationRequest(
+        objective_key=objective_key,
+        route_name=route_name,
+        subject_scope=subject_scope,
+    )
+    return await plan_autonomous_optimization_impl(request, settings)
 
 
 def main() -> None:

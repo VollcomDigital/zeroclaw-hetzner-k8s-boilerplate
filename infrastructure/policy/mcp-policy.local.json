@@ -2,6 +2,7 @@
   "version": 1,
   "default_action": "allow",
   "tools": {
+    "plan_autonomous_optimization": {},
     "plan_compliance_case": {},
     "plan_agent_control_plane": {},
     "plan_confidential_execution": {},

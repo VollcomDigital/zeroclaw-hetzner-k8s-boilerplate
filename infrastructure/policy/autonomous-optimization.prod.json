@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "targets": {
+    "latency_sensitive": {
+      "max_p95_latency_ms": 1200,
+      "max_error_rate": 0.02,
+      "max_cost_per_1k_tokens_usd": 0.02
+    }
+  },
+  "routes": {
+    "local_vllm": {
+      "current_p95_latency_ms": 1500,
+      "current_error_rate": 0.01,
+      "current_cost_per_1k_tokens_usd": 0.002,
+      "recommended_priority_delta": 5
+    },
+    "remote_secure": {
+      "current_p95_latency_ms": 900,
+      "current_error_rate": 0.01,
+      "current_cost_per_1k_tokens_usd": 0.03,
+      "recommended_priority_delta": -5
+    }
+  }
+}
