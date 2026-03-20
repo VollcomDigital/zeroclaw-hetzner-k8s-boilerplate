@@ -386,21 +386,24 @@ class IdempotencyCache:
         self._entries: dict[str, tuple[float, dict[str, object]]] = {}
         self._lock = threading.Lock()
 
+    def _purge_expired_locked(self, now: float) -> None:
+        self._entries = {k: v for k, v in self._entries.items() if v[0] > now}
+
     def get(self, key: str) -> dict[str, object] | None:
         now = time.monotonic()
         with self._lock:
+            self._purge_expired_locked(now)
             entry = self._entries.get(key)
             if entry is None:
                 return None
-            expires_at, value = entry
-            if expires_at <= now:
-                self._entries.pop(key, None)
-                return None
+            _, value = entry
             return dict(value)
 
     def set(self, key: str, value: dict[str, object]) -> None:
-        expires_at = time.monotonic() + self._ttl_seconds
+        now = time.monotonic()
+        expires_at = now + self._ttl_seconds
         with self._lock:
+            self._purge_expired_locked(now)
             self._entries[key] = (expires_at, dict(value))
 
 

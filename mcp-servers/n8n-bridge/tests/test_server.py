@@ -6,6 +6,7 @@ import respx
 from starlette.applications import Starlette
 from starlette.responses import JSONResponse
 
+import n8n_bridge.server as server
 from n8n_bridge.server import (
     BridgeSettings,
     IdempotencyCache,
@@ -18,6 +19,27 @@ from n8n_bridge.server import (
     trigger_n8n_workflow_impl,
     verify_bearer_token,
 )
+
+
+def test_idempotency_cache_purges_expired_on_set_without_get(monkeypatch: pytest.MonkeyPatch) -> None:
+    cache = IdempotencyCache(ttl_seconds=100.0)
+    clock = [0.0]
+    monkeypatch.setattr(server.time, "monotonic", lambda: clock[0])
+    cache.set("stale", {"v": 1})
+    assert len(cache._entries) == 1
+    clock[0] = 200.0
+    cache.set("fresh", {"v": 2})
+    assert list(cache._entries) == ["fresh"]
+
+
+def test_idempotency_cache_purges_expired_on_get_for_unrelated_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    cache = IdempotencyCache(ttl_seconds=100.0)
+    clock = [0.0]
+    monkeypatch.setattr(server.time, "monotonic", lambda: clock[0])
+    cache.set("stale", {"v": 1})
+    clock[0] = 200.0
+    assert cache.get("other") is None
+    assert cache._entries == {}
 
 
 def test_build_idempotency_key_is_order_insensitive() -> None:

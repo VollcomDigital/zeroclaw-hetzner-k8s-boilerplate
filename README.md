@@ -130,7 +130,9 @@ Makefile                         # Standard local/prod orchestration commands
 
 For a **GPU-free** local slice (infra + n8n + MCP bridge only, no agents), use `make dev-core` — intended for smoke tests or constrained hosts, not day-to-day development. See `docs/architecture.md` for profile details.
 
-**n8n** is also bound to **http://127.0.0.1:5678** on the host (in addition to Traefik + `N8N_HOST`) so you can open the UI when the Docker provider for Traefik misbehaves on some Docker Desktop builds.
+**Traefik** is pinned to a Docker 29-compatible release in this repo. If you still test `http://localhost/` directly and see `404`, that is expected: the local routers match hostnames such as `n8n.localhost` and `openwork.localhost`, not bare `localhost`.
+
+**n8n** is also bound to **http://127.0.0.1:5678** on the host (in addition to Traefik + `N8N_HOST`) so you can still open the UI if Docker Desktop regresses the Docker provider again in a future update.
 
 ```bash
 cp .env.local.example .env.local
