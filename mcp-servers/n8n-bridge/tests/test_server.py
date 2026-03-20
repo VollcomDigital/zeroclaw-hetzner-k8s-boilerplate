@@ -82,6 +82,12 @@ async def test_trigger_n8n_workflow_deduplicates_identical_payloads() -> None:
     assert first["deduplicated"] is False
     assert second["deduplicated"] is True
     assert second["idempotency_key"] == first["idempotency_key"]
+    assert first["request_id"] == second["request_id"]
+
+    sent_headers = route.calls[0].request.headers
+    assert sent_headers["X-Idempotency-Key"] == first["idempotency_key"]
+    assert sent_headers["X-Request-Id"] == first["request_id"]
+    assert sent_headers["X-Trace-Id"]
 
 
 @pytest.mark.asyncio
@@ -124,12 +130,13 @@ async def test_get_1password_secret_returns_selected_field_value() -> None:
 
     assert result["field_label"] == "api-key"
     assert result["value"] == "super-secret"
+    assert result["request_id"]
 
 
 @pytest.mark.asyncio
 @respx.mock
 async def test_get_1password_secret_returns_inventory_when_field_not_requested() -> None:
-    respx.get("http://1password-connect-api:8080/v1/vaults/vault-dev/items/item-001").mock(
+    route = respx.get("http://1password-connect-api:8080/v1/vaults/vault-dev/items/item-001").mock(
         return_value=httpx.Response(
             200,
             json={
@@ -153,6 +160,9 @@ async def test_get_1password_secret_returns_inventory_when_field_not_requested()
 
     assert result["title"] == "Demo Secret"
     assert result["available_fields"] == ["username", "api-key"]
+    assert result["request_id"]
+    assert route.calls[0].request.headers["X-Request-Id"] == result["request_id"]
+    assert route.calls[0].request.headers["X-Trace-Id"]
 
 
 @pytest.mark.asyncio

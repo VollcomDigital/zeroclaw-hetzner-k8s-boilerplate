@@ -149,6 +149,10 @@ def build_idempotency_key(webhook_id: str, payload: Mapping[str, JSONValue]) -> 
     return hashlib.sha256(f"{webhook_id}:{canonical_payload}".encode("utf-8")).hexdigest()
 
 
+def build_request_id(operation: str, identity: str) -> str:
+    return hashlib.sha256(f"{operation}:{identity}".encode("utf-8")).hexdigest()[:32]
+
+
 def parse_response_body(response: httpx.Response) -> object:
     content_type = response.headers.get("content-type", "")
     if "application/json" in content_type:
@@ -165,6 +169,13 @@ def verify_bearer_token(authorization_header: str | None, *, expected_token: str
         return False
 
     return hmac.compare_digest(token, expected_token)
+
+
+def build_observability_headers(request_id: str) -> dict[str, str]:
+    return {
+        "X-Request-Id": request_id,
+        "X-Trace-Id": current_trace_id(),
+    }
 
 
 def require_bridge_access_token(settings: BridgeSettings) -> str:
@@ -250,16 +261,19 @@ async def trigger_n8n_workflow_impl(
     cache: IdempotencyCache,
 ) -> dict[str, object]:
     idempotency_key = build_idempotency_key(request.webhook_id, request.payload)
+    request_id = build_request_id("trigger_n8n_workflow", idempotency_key)
     webhook_url = f"{settings.n8n_base_url}/webhook/{request.webhook_id}"
 
     with TRACER.start_as_current_span("mcp.trigger_n8n_workflow") as span:
         span.set_attribute("bridge.webhook_id", request.webhook_id)
         span.set_attribute("bridge.idempotency_key", idempotency_key)
+        span.set_attribute("bridge.request_id", request_id)
         log_event(
             "info",
             "trigger_n8n_workflow.start",
             webhook_id=request.webhook_id,
             idempotency_key=idempotency_key,
+            request_id=request_id,
             webhook_url=webhook_url,
         )
 
@@ -271,8 +285,14 @@ async def trigger_n8n_workflow_impl(
                 "trigger_n8n_workflow.deduplicated",
                 webhook_id=request.webhook_id,
                 idempotency_key=idempotency_key,
+                request_id=request_id,
             )
-            return {**cached_result, "deduplicated": True, "idempotency_key": idempotency_key}
+            return {
+                **cached_result,
+                "deduplicated": True,
+                "idempotency_key": idempotency_key,
+                "request_id": request_id,
+            }
 
         try:
             response = await client.post(
@@ -281,6 +301,7 @@ async def trigger_n8n_workflow_impl(
                 headers={
                     "Content-Type": "application/json",
                     "X-Idempotency-Key": idempotency_key,
+                    **build_observability_headers(request_id),
                 },
             )
             response.raise_for_status()
@@ -291,6 +312,7 @@ async def trigger_n8n_workflow_impl(
                 "trigger_n8n_workflow.failed",
                 webhook_id=request.webhook_id,
                 idempotency_key=idempotency_key,
+                request_id=request_id,
                 error=str(exc),
             )
             raise RuntimeError(f"n8n webhook request failed for '{request.webhook_id}'") from exc
@@ -298,6 +320,7 @@ async def trigger_n8n_workflow_impl(
         result = {
             "status_code": response.status_code,
             "response": parse_response_body(response),
+            "request_id": request_id,
         }
         cache.set(idempotency_key, result)
 
@@ -306,9 +329,14 @@ async def trigger_n8n_workflow_impl(
             "trigger_n8n_workflow.completed",
             webhook_id=request.webhook_id,
             idempotency_key=idempotency_key,
+            request_id=request_id,
             status_code=response.status_code,
         )
-        return {**result, "deduplicated": False, "idempotency_key": idempotency_key}
+        return {
+            **result,
+            "deduplicated": False,
+            "idempotency_key": idempotency_key,
+        }
 
 
 async def get_1password_secret_impl(
@@ -317,15 +345,21 @@ async def get_1password_secret_impl(
     *,
     client: httpx.AsyncClient,
 ) -> dict[str, object]:
+    request_id = build_request_id(
+        "get_1password_secret",
+        f"{request.vault_id}:{request.item_id}:{request.field_label or '*'}",
+    )
     with TRACER.start_as_current_span("mcp.get_1password_secret") as span:
         span.set_attribute("bridge.vault_id", request.vault_id)
         span.set_attribute("bridge.item_id", request.item_id)
+        span.set_attribute("bridge.request_id", request_id)
         log_event(
             "info",
             "get_1password_secret.start",
             vault_id=request.vault_id,
             item_id=request.item_id,
             field_label=request.field_label,
+            request_id=request_id,
         )
 
         if not settings.op_connect_token:
@@ -335,6 +369,7 @@ async def get_1password_secret_impl(
                 "get_1password_secret.configuration_error",
                 vault_id=request.vault_id,
                 item_id=request.item_id,
+                request_id=request_id,
                 error=error_message,
             )
             raise RuntimeError(error_message)
@@ -345,6 +380,7 @@ async def get_1password_secret_impl(
                 headers={
                     "Accept": "application/json",
                     "Authorization": f"Bearer {settings.op_connect_token}",
+                    **build_observability_headers(request_id),
                 },
             )
             response.raise_for_status()
@@ -355,6 +391,7 @@ async def get_1password_secret_impl(
                 "get_1password_secret.failed",
                 vault_id=request.vault_id,
                 item_id=request.item_id,
+                request_id=request_id,
                 error=str(exc),
             )
             raise RuntimeError(
@@ -377,6 +414,7 @@ async def get_1password_secret_impl(
                 "get_1password_secret.inventory",
                 vault_id=request.vault_id,
                 item_id=request.item_id,
+                request_id=request_id,
                 available_fields=available_fields,
             )
             return {
@@ -384,6 +422,7 @@ async def get_1password_secret_impl(
                 "item_id": item.get("id", request.item_id),
                 "title": item.get("title"),
                 "available_fields": available_fields,
+                "request_id": request_id,
             }
 
         matched_field = select_field(item, request.field_label)
@@ -397,6 +436,7 @@ async def get_1password_secret_impl(
                 vault_id=request.vault_id,
                 item_id=request.item_id,
                 field_label=request.field_label,
+                request_id=request_id,
             )
             raise ValueError(error_message)
 
@@ -406,12 +446,14 @@ async def get_1password_secret_impl(
             vault_id=request.vault_id,
             item_id=request.item_id,
             field_label=request.field_label,
+            request_id=request_id,
         )
         return {
             "vault_id": request.vault_id,
             "item_id": item.get("id", request.item_id),
             "title": item.get("title"),
             "field_label": request.field_label,
+            "request_id": request_id,
             "value": matched_field.get("value"),
         }
 

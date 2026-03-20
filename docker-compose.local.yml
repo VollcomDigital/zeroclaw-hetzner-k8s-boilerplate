@@ -16,6 +16,23 @@ x-local-runtime: &local_runtime
       max-file: "5"
 
 services:
+  alloy:
+    <<: *local_runtime
+    image: grafana/alloy:v1.8.2
+    command:
+      - run
+      - /etc/alloy/config.alloy
+      - --server.http.listen-addr=0.0.0.0:12345
+    expose:
+      - "4317"
+      - "4318"
+      - "12345"
+    volumes:
+      - ./infrastructure/observability/alloy.local.alloy:/etc/alloy/config.alloy:ro
+    networks:
+      - app-tier
+      - ai-tier
+
   traefik:
     <<: *local_runtime
     image: traefik:v3.3
@@ -37,6 +54,10 @@ services:
     environment:
       PORT: "${OPENWORK_PORT:-3000}"
       OPENCLAW_BASE_URL: http://openclaw:${OPENCLAW_PORT:-18789}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://alloy:4318}
+      OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+      OTEL_PROPAGATORS: tracecontext,baggage
+      OTEL_SERVICE_NAME: openwork
       TZ: ${TZ:-UTC}
     expose:
       - "${OPENWORK_PORT:-3000}"
@@ -66,7 +87,9 @@ services:
       QDRANT_URL: http://qdrant:6333
       QDRANT_API_KEY: ${QDRANT_API_KEY}
       OTEL_SERVICE_NAME: openclaw
-      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://alloy:4318}
+      OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+      OTEL_PROPAGATORS: tracecontext,baggage
       TZ: ${TZ:-UTC}
     expose:
       - "${OPENCLAW_PORT:-18789}"
@@ -87,7 +110,9 @@ services:
     environment:
       OPENSHELL_SANDBOX_ROOT: /sandbox
       OTEL_SERVICE_NAME: nemoclaw
-      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://alloy:4318}
+      OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+      OTEL_PROPAGATORS: tracecontext,baggage
       TZ: ${TZ:-UTC}
     expose:
       - "8080"
@@ -115,6 +140,10 @@ services:
     environment:
       HF_HOME: /home/app/.cache/huggingface
       HUGGING_FACE_HUB_TOKEN: ${HUGGING_FACE_HUB_TOKEN:-}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://alloy:4318}
+      OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+      OTEL_PROPAGATORS: tracecontext,baggage
+      OTEL_SERVICE_NAME: vllm
       TZ: ${TZ:-UTC}
     expose:
       - "8000"
@@ -140,6 +169,10 @@ services:
     platform: linux/arm64
     environment:
       OLLAMA_KEEP_ALIVE: 24h
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://alloy:4318}
+      OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+      OTEL_PROPAGATORS: tracecontext,baggage
+      OTEL_SERVICE_NAME: ollama
       TZ: ${TZ:-UTC}
     expose:
       - "11434"
@@ -206,6 +239,10 @@ services:
       N8N_HOST: ${N8N_HOST}
       N8N_PROTOCOL: http
       N8N_SECURE_COOKIE: "false"
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://alloy:4318}
+      OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+      OTEL_PROPAGATORS: tracecontext,baggage
+      OTEL_SERVICE_NAME: n8n
       WEBHOOK_URL: http://${N8N_HOST}/
       TZ: ${TZ:-UTC}
     expose:
@@ -238,7 +275,9 @@ services:
       OP_CONNECT_URL: http://1password-connect-api:8080
       OP_CONNECT_TOKEN: ${OP_CONNECT_TOKEN}
       OTEL_SERVICE_NAME: mcp-server-n8n
-      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://alloy:4318}
+      OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+      OTEL_PROPAGATORS: tracecontext,baggage
       TZ: ${TZ:-UTC}
     expose:
       - "8000"

@@ -17,6 +17,23 @@ x-runtime-defaults: &runtime_defaults
       max-file: "5"
 
 services:
+  alloy:
+    <<: *runtime_defaults
+    image: grafana/alloy:v1.8.2
+    command:
+      - run
+      - /etc/alloy/config.alloy
+      - --server.http.listen-addr=0.0.0.0:12345
+    expose:
+      - "4317"
+      - "4318"
+      - "12345"
+    volumes:
+      - ./infrastructure/observability/alloy.prod.alloy:/etc/alloy/config.alloy:ro
+    networks:
+      - app-tier
+      - ai-tier
+
   traefik:
     <<: *runtime_defaults
     image: traefik:v3.3
@@ -60,6 +77,10 @@ services:
       OAUTH2_PROXY_REDIRECT_URL: https://${SSO_HOST}/oauth2/callback
       OAUTH2_PROXY_WHITELIST_DOMAINS: .${DOMAIN}
       OAUTH2_PROXY_ALLOWED_GROUPS: ${ENTRA_ALLOWED_GROUPS:?ENTRA_ALLOWED_GROUPS must be set in production}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://alloy:4318}
+      OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+      OTEL_PROPAGATORS: tracecontext,baggage
+      OTEL_SERVICE_NAME: sso
     expose:
       - "4180"
     volumes:
@@ -87,6 +108,10 @@ services:
     environment:
       PORT: "${OPENWORK_PORT:-3000}"
       OPENCLAW_BASE_URL: http://openclaw:${OPENCLAW_PORT:-18789}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://alloy:4318}
+      OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+      OTEL_PROPAGATORS: tracecontext,baggage
+      OTEL_SERVICE_NAME: openwork
       TZ: ${TZ:-UTC}
     expose:
       - "${OPENWORK_PORT:-3000}"
@@ -114,7 +139,9 @@ services:
       QDRANT_URL: http://qdrant:6333
       QDRANT_API_KEY: ${QDRANT_API_KEY}
       OTEL_SERVICE_NAME: openclaw
-      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://alloy:4318}
+      OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+      OTEL_PROPAGATORS: tracecontext,baggage
       TZ: ${TZ:-UTC}
     expose:
       - "${OPENCLAW_PORT:-18789}"
@@ -135,7 +162,9 @@ services:
     environment:
       OPENSHELL_SANDBOX_ROOT: /sandbox
       OTEL_SERVICE_NAME: nemoclaw
-      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://alloy:4318}
+      OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+      OTEL_PROPAGATORS: tracecontext,baggage
       TZ: ${TZ:-UTC}
     expose:
       - "8080"
@@ -160,6 +189,10 @@ services:
     environment:
       HF_HOME: /home/app/.cache/huggingface
       HUGGING_FACE_HUB_TOKEN: ${HUGGING_FACE_HUB_TOKEN:-}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://alloy:4318}
+      OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+      OTEL_PROPAGATORS: tracecontext,baggage
+      OTEL_SERVICE_NAME: vllm
       TZ: ${TZ:-UTC}
     expose:
       - "8000"
@@ -235,6 +268,10 @@ services:
       N8N_HOST: ${N8N_HOST}
       N8N_PROTOCOL: https
       N8N_SECURE_COOKIE: "true"
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://alloy:4318}
+      OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+      OTEL_PROPAGATORS: tracecontext,baggage
+      OTEL_SERVICE_NAME: n8n
       WEBHOOK_URL: https://${N8N_HOST}/
       TZ: ${TZ:-UTC}
     expose:
@@ -268,7 +305,9 @@ services:
       OP_CONNECT_URL: http://1password-connect-api:8080
       OP_CONNECT_TOKEN: ${OP_CONNECT_TOKEN}
       OTEL_SERVICE_NAME: mcp-server-n8n
-      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://alloy:4318}
+      OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+      OTEL_PROPAGATORS: tracecontext,baggage
       TZ: ${TZ:-UTC}
     expose:
       - "8000"
