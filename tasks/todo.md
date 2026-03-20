@@ -16,7 +16,7 @@
 - [x] Add release engineering
 
 ## Phase 3: Outperforming the 99% (90 Days)
-- [ ] Deterministic replay and audit ledger
+- [x] Deterministic replay and audit ledger
 - [ ] Policy engine for tools, secrets, workflows
 - [ ] Adaptive model routing layer
 - [ ] GPU utilization and cost governance

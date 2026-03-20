@@ -300,6 +300,7 @@ services:
       context: ./mcp-servers/n8n-bridge
     environment:
       BRIDGE_ACCESS_TOKEN: ${BRIDGE_ACCESS_TOKEN}
+      BRIDGE_AUDIT_LEDGER_PATH: ${BRIDGE_AUDIT_LEDGER_PATH:-/var/lib/n8n-bridge/audit-ledger.jsonl}
       MCP_HOST: 0.0.0.0
       MCP_PORT: "8000"
       N8N_BASE_URL: http://n8n:5678
@@ -315,6 +316,8 @@ services:
     depends_on:
       - n8n
       - 1password-connect-api
+    volumes:
+      - mcp-audit-data:/var/lib/n8n-bridge
     networks:
       - app-tier
 
@@ -339,6 +342,7 @@ volumes:
   postgres-data:
   qdrant-data:
   vllm-cache:
+  mcp-audit-data:
 
 networks:
   proxy-tier:

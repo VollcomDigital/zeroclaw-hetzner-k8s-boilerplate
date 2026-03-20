@@ -10,6 +10,7 @@ import time
 from collections.abc import Mapping
 from datetime import datetime, timezone
 from functools import lru_cache
+from pathlib import Path
 
 import httpx
 from mcp.server.fastmcp import FastMCP
@@ -50,6 +51,7 @@ class BridgeSettings(BaseModel):
     op_connect_url: str = "http://1password-connect-api:8080"
     op_connect_token: str | None = None
     bridge_access_token: str | None = None
+    audit_ledger_path: str = "/tmp/n8n-bridge/audit-ledger.jsonl"
     request_timeout_seconds: float = Field(default=15.0, gt=0)
     idempotency_ttl_seconds: float = Field(default=300.0, ge=0)
 
@@ -107,6 +109,10 @@ def get_settings() -> BridgeSettings:
         op_connect_url=os.getenv("OP_CONNECT_URL", "http://1password-connect-api:8080"),
         op_connect_token=os.getenv("OP_CONNECT_TOKEN"),
         bridge_access_token=os.getenv("BRIDGE_ACCESS_TOKEN"),
+        audit_ledger_path=os.getenv(
+            "BRIDGE_AUDIT_LEDGER_PATH",
+            "/tmp/n8n-bridge/audit-ledger.jsonl",
+        ),
         request_timeout_seconds=float(os.getenv("BRIDGE_REQUEST_TIMEOUT_SECONDS", "15")),
         idempotency_ttl_seconds=float(os.getenv("BRIDGE_IDEMPOTENCY_TTL_SECONDS", "300")),
     )
@@ -153,6 +159,11 @@ def build_request_id(operation: str, identity: str) -> str:
     return hashlib.sha256(f"{operation}:{identity}".encode("utf-8")).hexdigest()[:32]
 
 
+def build_replay_fingerprint(operation: str, request: Mapping[str, JSONValue]) -> str:
+    canonical_request = canonicalize_payload(request)
+    return hashlib.sha256(f"{operation}:{canonical_request}".encode("utf-8")).hexdigest()
+
+
 def parse_response_body(response: httpx.Response) -> object:
     content_type = response.headers.get("content-type", "")
     if "application/json" in content_type:
@@ -176,6 +187,57 @@ def build_observability_headers(request_id: str) -> dict[str, str]:
         "X-Request-Id": request_id,
         "X-Trace-Id": current_trace_id(),
     }
+
+
+AUDIT_LEDGER_LOCK = threading.Lock()
+
+
+def append_audit_record(ledger_path: str, record: Mapping[str, object]) -> None:
+    target_path = Path(ledger_path)
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+
+    with AUDIT_LEDGER_LOCK:
+        with target_path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(record, sort_keys=True) + "\n")
+
+
+def write_audit_record(
+    settings: BridgeSettings,
+    *,
+    operation: str,
+    request_id: str,
+    request: Mapping[str, JSONValue],
+    outcome: Mapping[str, JSONValue],
+    idempotency_key: str | None = None,
+) -> None:
+    replay_fingerprint = build_replay_fingerprint(operation, request)
+    record = {
+        "event_version": 1,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "service_name": SERVICE_NAME,
+        "operation": operation,
+        "request_id": request_id,
+        "trace_id": current_trace_id(),
+        "replay_fingerprint": replay_fingerprint,
+        "idempotency_key": idempotency_key,
+        "request": dict(request),
+        "outcome": dict(outcome),
+    }
+
+    with TRACER.start_as_current_span("mcp.audit_ledger_write") as span:
+        span.set_attribute("bridge.audit.operation", operation)
+        span.set_attribute("bridge.audit.request_id", request_id)
+        span.set_attribute("bridge.audit.replay_fingerprint", replay_fingerprint)
+        append_audit_record(settings.audit_ledger_path, record)
+
+    log_event(
+        "info",
+        "audit_ledger.persisted",
+        operation=operation,
+        request_id=request_id,
+        replay_fingerprint=replay_fingerprint,
+        ledger_path=settings.audit_ledger_path,
+    )
 
 
 def require_bridge_access_token(settings: BridgeSettings) -> str:
@@ -262,6 +324,7 @@ async def trigger_n8n_workflow_impl(
 ) -> dict[str, object]:
     idempotency_key = build_idempotency_key(request.webhook_id, request.payload)
     request_id = build_request_id("trigger_n8n_workflow", idempotency_key)
+    replay_request = {"webhook_id": request.webhook_id, "payload": request.payload}
     webhook_url = f"{settings.n8n_base_url}/webhook/{request.webhook_id}"
 
     with TRACER.start_as_current_span("mcp.trigger_n8n_workflow") as span:
@@ -323,6 +386,17 @@ async def trigger_n8n_workflow_impl(
             "request_id": request_id,
         }
         cache.set(idempotency_key, result)
+        write_audit_record(
+            settings,
+            operation="trigger_n8n_workflow",
+            request_id=request_id,
+            request=replay_request,
+            outcome={
+                "status_code": response.status_code,
+                "deduplicated": False,
+            },
+            idempotency_key=idempotency_key,
+        )
 
         log_event(
             "info",
@@ -349,6 +423,11 @@ async def get_1password_secret_impl(
         "get_1password_secret",
         f"{request.vault_id}:{request.item_id}:{request.field_label or '*'}",
     )
+    replay_request = {
+        "vault_id": request.vault_id,
+        "item_id": request.item_id,
+        "field_label": request.field_label,
+    }
     with TRACER.start_as_current_span("mcp.get_1password_secret") as span:
         span.set_attribute("bridge.vault_id", request.vault_id)
         span.set_attribute("bridge.item_id", request.item_id)
@@ -417,6 +496,17 @@ async def get_1password_secret_impl(
                 request_id=request_id,
                 available_fields=available_fields,
             )
+            write_audit_record(
+                settings,
+                operation="get_1password_secret",
+                request_id=request_id,
+                request=replay_request,
+                outcome={
+                    "available_fields": available_fields,
+                    "field_label": request.field_label,
+                    "secret_value_redacted": True,
+                },
+            )
             return {
                 "vault_id": request.vault_id,
                 "item_id": item.get("id", request.item_id),
@@ -447,6 +537,17 @@ async def get_1password_secret_impl(
             item_id=request.item_id,
             field_label=request.field_label,
             request_id=request_id,
+        )
+        write_audit_record(
+            settings,
+            operation="get_1password_secret",
+            request_id=request_id,
+            request=replay_request,
+            outcome={
+                "field_label": request.field_label,
+                "secret_value_redacted": True,
+                "title": item.get("title"),
+            },
         )
         return {
             "vault_id": request.vault_id,
