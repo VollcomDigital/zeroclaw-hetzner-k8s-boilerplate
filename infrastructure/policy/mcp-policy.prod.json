@@ -2,6 +2,7 @@
   "version": 1,
   "default_action": "deny",
   "tools": {
+    "select_model_route": {},
     "trigger_n8n_workflow": {
       "allowed_webhook_ids": [
         "replace-with-approved-webhook-id"

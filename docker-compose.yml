@@ -302,6 +302,7 @@ services:
       BRIDGE_ACCESS_TOKEN: ${BRIDGE_ACCESS_TOKEN}
       BRIDGE_AUDIT_LEDGER_PATH: ${BRIDGE_AUDIT_LEDGER_PATH:-/var/lib/n8n-bridge/audit-ledger.jsonl}
       BRIDGE_POLICY_FILE_PATH: ${BRIDGE_POLICY_FILE_PATH:-/etc/n8n-bridge/policy.json}
+      BRIDGE_ROUTING_FILE_PATH: ${BRIDGE_ROUTING_FILE_PATH:-/etc/n8n-bridge/model-routing.json}
       MCP_HOST: 0.0.0.0
       MCP_PORT: "8000"
       N8N_BASE_URL: http://n8n:5678
@@ -320,6 +321,7 @@ services:
     volumes:
       - mcp-audit-data:/var/lib/n8n-bridge
       - ./infrastructure/policy/mcp-policy.prod.json:/etc/n8n-bridge/policy.json:ro
+      - ./infrastructure/policy/model-routing.prod.json:/etc/n8n-bridge/model-routing.json:ro
     networks:
       - app-tier
 

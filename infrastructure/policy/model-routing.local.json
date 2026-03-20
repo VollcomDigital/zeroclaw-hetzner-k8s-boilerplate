@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "default_route": "local_ollama",
+  "routes": {
+    "local_vllm": {
+      "base_url": "http://vllm:8000/v1",
+      "model": "Qwen/Qwen2.5-Coder-7B-Instruct",
+      "provider": "vllm",
+      "capabilities": ["chat", "code", "reasoning"],
+      "allowed_data_classifications": ["public", "internal"],
+      "regions": ["local"],
+      "max_latency_ms": 1200,
+      "priority": 10,
+      "requires_local": true,
+      "healthy": true
+    },
+    "local_ollama": {
+      "base_url": "http://ollama:11434/v1",
+      "model": "qwen2.5-coder:7b",
+      "provider": "ollama",
+      "capabilities": ["chat", "code"],
+      "allowed_data_classifications": ["public", "internal"],
+      "regions": ["local"],
+      "max_latency_ms": 2500,
+      "priority": 20,
+      "requires_local": true,
+      "healthy": true
+    },
+    "remote_secure": {
+      "base_url": "https://secure-llm.example.com/v1",
+      "model": "replace-with-remote-secure-model",
+      "provider": "remote",
+      "capabilities": ["chat", "code", "reasoning"],
+      "allowed_data_classifications": ["public", "internal", "restricted"],
+      "regions": ["*"],
+      "max_latency_ms": 4000,
+      "priority": 50,
+      "requires_local": false,
+      "healthy": true
+    }
+  }
+}

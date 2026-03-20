@@ -18,7 +18,7 @@
 ## Phase 3: Outperforming the 99% (90 Days)
 - [x] Deterministic replay and audit ledger
 - [x] Policy engine for tools, secrets, workflows
-- [ ] Adaptive model routing layer
+- [x] Adaptive model routing layer
 - [ ] GPU utilization and cost governance
 - [ ] PII-aware vector memory lifecycle
 - [ ] Progressive rollout for workflows and prompts

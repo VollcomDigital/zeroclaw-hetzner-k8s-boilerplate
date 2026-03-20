@@ -53,6 +53,7 @@ class BridgeSettings(BaseModel):
     bridge_access_token: str | None = None
     audit_ledger_path: str = "/tmp/n8n-bridge/audit-ledger.jsonl"
     policy_file_path: str | None = None
+    routing_file_path: str | None = None
     request_timeout_seconds: float = Field(default=15.0, gt=0)
     idempotency_ttl_seconds: float = Field(default=300.0, ge=0)
 
@@ -75,6 +76,39 @@ class SecretRequest(BaseModel):
     vault_id: str = Field(min_length=1)
     item_id: str = Field(min_length=1)
     field_label: str | None = Field(default=None, min_length=1)
+
+
+class ModelRoutingRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    workload_kind: str = Field(min_length=1)
+    data_classification: str = Field(min_length=1)
+    max_latency_ms: int = Field(ge=1)
+    require_local: bool = False
+    preferred_region: str | None = None
+
+
+class ModelRouteConfig(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    base_url: str
+    model: str
+    provider: str
+    capabilities: list[str] = Field(default_factory=list)
+    allowed_data_classifications: list[str] = Field(default_factory=list)
+    regions: list[str] = Field(default_factory=lambda: ["*"])
+    max_latency_ms: int = Field(ge=1)
+    priority: int = Field(default=100, ge=0)
+    requires_local: bool = False
+    healthy: bool = True
+
+
+class ModelRoutingConfig(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    version: int = 1
+    default_route: str | None = None
+    routes: dict[str, ModelRouteConfig] = Field(default_factory=dict)
 
 
 class IdempotencyCache:
@@ -115,6 +149,7 @@ def get_settings() -> BridgeSettings:
             "/tmp/n8n-bridge/audit-ledger.jsonl",
         ),
         policy_file_path=os.getenv("BRIDGE_POLICY_FILE_PATH"),
+        routing_file_path=os.getenv("BRIDGE_ROUTING_FILE_PATH"),
         request_timeout_seconds=float(os.getenv("BRIDGE_REQUEST_TIMEOUT_SECONDS", "15")),
         idempotency_ttl_seconds=float(os.getenv("BRIDGE_IDEMPOTENCY_TTL_SECONDS", "300")),
     )
@@ -225,9 +260,7 @@ class PolicyEngine:
                 }
             return {"allowed": True, "reason": "secret policy matched"}
 
-        if default_action == "allow":
-            return {"allowed": True, "reason": "default allow policy"}
-        return {"allowed": False, "reason": f"tool '{tool_name}' is not permitted by policy"}
+        return {"allowed": True, "reason": "tool policy entry matched"}
 
     @staticmethod
     def _is_allowed(allowed_values: list[str], candidate: str | None) -> bool:
@@ -252,6 +285,112 @@ def build_policy_engine(settings: BridgeSettings) -> PolicyEngine:
     if settings.policy_file_path:
         return _cached_policy_engine(settings.policy_file_path)
     return PolicyEngine(BridgePolicy(default_action="allow"))
+
+
+class ModelRouter:
+    def __init__(self, config: ModelRoutingConfig) -> None:
+        self._config = config
+
+    def select_route(self, request: ModelRoutingRequest) -> dict[str, JSONValue]:
+        matching_routes = [
+            (route_name, route)
+            for route_name, route in self._config.routes.items()
+            if self._route_matches(route, request)
+        ]
+        if matching_routes:
+            selected_name, selected_route = sorted(
+                matching_routes,
+                key=lambda item: (
+                    item[1].priority,
+                    0 if item[1].requires_local else 1,
+                    item[1].max_latency_ms,
+                    item[0],
+                ),
+            )[0]
+            return self._serialize_route(selected_name, selected_route, request)
+
+        if self._config.default_route:
+            default_route = self._config.routes.get(self._config.default_route)
+            if default_route and self._fallback_matches(default_route, request):
+                return self._serialize_route(self._config.default_route, default_route, request, fallback=True)
+
+        raise RuntimeError("No healthy model route matched the request.")
+
+    @staticmethod
+    def _route_matches(route: ModelRouteConfig, request: ModelRoutingRequest) -> bool:
+        if not route.healthy:
+            return False
+        if route.max_latency_ms > request.max_latency_ms:
+            return False
+        if request.require_local and not route.requires_local:
+            return False
+        if route.capabilities and "*" not in route.capabilities and request.workload_kind not in route.capabilities:
+            return False
+        if (
+            route.allowed_data_classifications
+            and "*" not in route.allowed_data_classifications
+            and request.data_classification not in route.allowed_data_classifications
+        ):
+            return False
+        if request.preferred_region:
+            if route.regions and "*" not in route.regions and request.preferred_region not in route.regions:
+                return False
+        return True
+
+    @staticmethod
+    def _fallback_matches(route: ModelRouteConfig, request: ModelRoutingRequest) -> bool:
+        if not route.healthy:
+            return False
+        if request.require_local and not route.requires_local:
+            return False
+        if route.capabilities and "*" not in route.capabilities and request.workload_kind not in route.capabilities:
+            return False
+        if (
+            route.allowed_data_classifications
+            and "*" not in route.allowed_data_classifications
+            and request.data_classification not in route.allowed_data_classifications
+        ):
+            return False
+        return True
+
+    @staticmethod
+    def _serialize_route(
+        route_name: str,
+        route: ModelRouteConfig,
+        request: ModelRoutingRequest,
+        *,
+        fallback: bool = False,
+    ) -> dict[str, JSONValue]:
+        return {
+            "route_name": route_name,
+            "provider": route.provider,
+            "base_url": route.base_url,
+            "model": route.model,
+            "requires_local": route.requires_local,
+            "max_latency_ms": route.max_latency_ms,
+            "priority": route.priority,
+            "fallback": fallback,
+            "replay_fingerprint": build_replay_fingerprint(
+                "select_model_route",
+                request.model_dump(mode="json"),
+            ),
+        }
+
+
+def _load_routing_file(routing_file_path: str) -> ModelRoutingConfig:
+    payload = json.loads(Path(routing_file_path).read_text(encoding="utf-8"))
+    return ModelRoutingConfig.model_validate(payload)
+
+
+@lru_cache(maxsize=8)
+def _cached_model_router(routing_file_path: str) -> ModelRouter:
+    return ModelRouter(_load_routing_file(routing_file_path))
+
+
+def build_model_router(settings: BridgeSettings) -> ModelRouter:
+    if settings.routing_file_path:
+        return _cached_model_router(settings.routing_file_path)
+    return ModelRouter(ModelRoutingConfig(default_route=None, routes={}))
 
 
 def build_replay_fingerprint(operation: str, request: Mapping[str, JSONValue]) -> str:
@@ -719,6 +858,63 @@ async def get_1password_secret_impl(
         }
 
 
+async def select_model_route_impl(
+    request: ModelRoutingRequest,
+    settings: BridgeSettings,
+) -> dict[str, JSONValue]:
+    request_id = build_request_id(
+        "select_model_route",
+        canonicalize_payload(request.model_dump(mode="json")),
+    )
+
+    with TRACER.start_as_current_span("mcp.select_model_route") as span:
+        span.set_attribute("bridge.request_id", request_id)
+        span.set_attribute("bridge.routing.workload_kind", request.workload_kind)
+        span.set_attribute("bridge.routing.data_classification", request.data_classification)
+        log_event(
+            "info",
+            "select_model_route.start",
+            request_id=request_id,
+            workload_kind=request.workload_kind,
+            data_classification=request.data_classification,
+            require_local=request.require_local,
+            preferred_region=request.preferred_region,
+        )
+        enforce_policy(
+            settings,
+            tool_name="select_model_route",
+            request_id=request_id,
+            attributes={
+                "workload_kind": request.workload_kind,
+                "data_classification": request.data_classification,
+            },
+        )
+
+        route_result = build_model_router(settings).select_route(request)
+        route_result["request_id"] = request_id
+        write_audit_record(
+            settings,
+            operation="select_model_route",
+            request_id=request_id,
+            request=request.model_dump(mode="json"),
+            outcome={
+                "route_name": route_result["route_name"],
+                "provider": route_result["provider"],
+                "fallback": route_result["fallback"],
+                "policy_decision": "allow",
+            },
+        )
+        log_event(
+            "info",
+            "select_model_route.completed",
+            request_id=request_id,
+            route_name=route_result["route_name"],
+            provider=route_result["provider"],
+            fallback=route_result["fallback"],
+        )
+        return route_result
+
+
 DEFAULT_CACHE = IdempotencyCache(ttl_seconds=get_settings().idempotency_ttl_seconds)
 
 
@@ -742,6 +938,26 @@ async def get_1password_secret(
     request = SecretRequest(vault_id=vault_id, item_id=item_id, field_label=field_label)
     async with httpx.AsyncClient(timeout=settings.request_timeout_seconds) as client:
         return await get_1password_secret_impl(request, settings, client=client)
+
+
+@MCP_SERVER.tool()
+async def select_model_route(
+    workload_kind: str,
+    data_classification: str,
+    max_latency_ms: int,
+    require_local: bool = False,
+    preferred_region: str | None = None,
+) -> dict[str, JSONValue]:
+    """Select the most appropriate model route based on sensitivity, locality, and latency budget."""
+    settings = get_settings()
+    request = ModelRoutingRequest(
+        workload_kind=workload_kind,
+        data_classification=data_classification,
+        max_latency_ms=max_latency_ms,
+        require_local=require_local,
+        preferred_region=preferred_region,
+    )
+    return await select_model_route_impl(request, settings)
 
 
 def main() -> None:

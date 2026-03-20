@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "default_route": "remote_secure",
+  "routes": {
+    "local_vllm": {
+      "base_url": "http://vllm:8000/v1",
+      "model": "meta-llama/Llama-3.1-8B-Instruct",
+      "provider": "vllm",
+      "capabilities": ["chat", "code", "reasoning"],
+      "allowed_data_classifications": ["public", "internal"],
+      "regions": ["eu-central", "local"],
+      "max_latency_ms": 1200,
+      "priority": 10,
+      "requires_local": true,
+      "healthy": true
+    },
+    "remote_secure": {
+      "base_url": "https://secure-llm.example.com/v1",
+      "model": "replace-with-remote-secure-model",
+      "provider": "remote",
+      "capabilities": ["chat", "code", "reasoning"],
+      "allowed_data_classifications": ["public", "internal", "restricted"],
+      "regions": ["*"],
+      "max_latency_ms": 4000,
+      "priority": 50,
+      "requires_local": false,
+      "healthy": true
+    }
+  }
+}
