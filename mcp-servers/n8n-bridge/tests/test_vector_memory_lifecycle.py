@@ -37,7 +37,7 @@ def default_policy_payload() -> dict[str, object]:
 
 def test_vector_memory_lifecycle_replay_fingerprint_is_deterministic(tmp_path: Path) -> None:
     settings = BridgeSettings(
-        vector_memory_policy_file_path=write_vector_policy(
+        vector_memory_config_path=write_vector_policy(
             tmp_path / "vector-policy.json",
             default_policy_payload(),
         )
@@ -69,7 +69,7 @@ def test_vector_memory_lifecycle_replay_fingerprint_is_deterministic(tmp_path: P
 @pytest.mark.asyncio
 async def test_vector_memory_lifecycle_respects_legal_hold_over_delete_request(tmp_path: Path) -> None:
     settings = BridgeSettings(
-        vector_memory_policy_file_path=write_vector_policy(
+        vector_memory_config_path=write_vector_policy(
             tmp_path / "vector-policy.json",
             default_policy_payload(),
         ),
@@ -95,7 +95,7 @@ async def test_vector_memory_lifecycle_respects_legal_hold_over_delete_request(t
 @pytest.mark.asyncio
 async def test_vector_memory_lifecycle_deletes_expired_pii_memory(tmp_path: Path) -> None:
     settings = BridgeSettings(
-        vector_memory_policy_file_path=write_vector_policy(
+        vector_memory_config_path=write_vector_policy(
             tmp_path / "vector-policy.json",
             default_policy_payload(),
         ),
@@ -120,7 +120,7 @@ async def test_vector_memory_lifecycle_deletes_expired_pii_memory(tmp_path: Path
 @pytest.mark.asyncio
 async def test_vector_memory_lifecycle_retains_unexpired_non_pii_memory(tmp_path: Path) -> None:
     settings = BridgeSettings(
-        vector_memory_policy_file_path=write_vector_policy(
+        vector_memory_config_path=write_vector_policy(
             tmp_path / "vector-policy.json",
             default_policy_payload(),
         ),

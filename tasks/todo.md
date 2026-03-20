@@ -30,3 +30,8 @@
 - [x] Compliance-native AI platform
 - [x] Autonomous optimization layer
 - [x] Hybrid local/prod sovereignty mode
+
+## Phase 5: Documentation & planning consistency
+- [x] Normalize config naming across all planning modules
+- [x] Add top-level documentation for all MCP control-plane tools and policy files
+- [x] (Optional) Produce a release-ready architecture index in `README.md` or a dedicated `docs/` page

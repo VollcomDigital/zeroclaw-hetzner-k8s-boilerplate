@@ -1,6 +1,18 @@
 logging {
-  level  = "debug"
+  level  = "info"
   format = "logfmt"
+}
+
+otelcol.exporter.debug "default" {
+  verbosity = "basic"
+}
+
+otelcol.processor.batch "default" {
+  output {
+    logs    = [otelcol.exporter.debug.default.input]
+    metrics = [otelcol.exporter.debug.default.input]
+    traces  = [otelcol.exporter.debug.default.input]
+  }
 }
 
 otelcol.receiver.otlp "default" {
@@ -15,36 +27,6 @@ otelcol.receiver.otlp "default" {
   output {
     logs    = [otelcol.processor.batch.default.input]
     metrics = [otelcol.processor.batch.default.input]
-    traces  = [
-      otelcol.processor.batch.default.input,
-      otelcol.connector.spanmetrics.default.input,
-      otelcol.connector.servicegraph.default.input,
-    ]
+    traces  = [otelcol.processor.batch.default.input]
   }
-}
-
-otelcol.processor.batch "default" {
-  output {
-    logs    = [otelcol.exporter.debug.default.input]
-    metrics = [otelcol.exporter.debug.default.input]
-    traces  = [otelcol.exporter.debug.default.input]
-  }
-}
-
-otelcol.connector.spanmetrics "default" {
-  histogram {}
-
-  output {
-    metrics = [otelcol.exporter.debug.default.input]
-  }
-}
-
-otelcol.connector.servicegraph "default" {
-  output {
-    metrics = [otelcol.exporter.debug.default.input]
-  }
-}
-
-otelcol.exporter.debug "default" {
-  verbosity = "basic"
 }

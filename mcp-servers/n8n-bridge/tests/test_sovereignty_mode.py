@@ -41,7 +41,7 @@ def base_sovereignty_config() -> dict[str, object]:
 
 def test_sovereignty_mode_returns_local_only_for_restricted_data(tmp_path: Path) -> None:
     settings = BridgeSettings(
-        sovereignty_file_path=write_sovereignty_config(
+        sovereignty_config_path=write_sovereignty_config(
             tmp_path / "sovereignty.json",
             base_sovereignty_config(),
         )
@@ -62,7 +62,7 @@ def test_sovereignty_mode_returns_local_only_for_restricted_data(tmp_path: Path)
 
 def test_sovereignty_mode_allows_in_region_processing_for_internal_data(tmp_path: Path) -> None:
     settings = BridgeSettings(
-        sovereignty_file_path=write_sovereignty_config(
+        sovereignty_config_path=write_sovereignty_config(
             tmp_path / "sovereignty.json",
             base_sovereignty_config(),
         )
@@ -83,7 +83,7 @@ def test_sovereignty_mode_allows_in_region_processing_for_internal_data(tmp_path
 
 def test_sovereignty_mode_respects_explicit_locality_requirement(tmp_path: Path) -> None:
     settings = BridgeSettings(
-        sovereignty_file_path=write_sovereignty_config(
+        sovereignty_config_path=write_sovereignty_config(
             tmp_path / "sovereignty.json",
             base_sovereignty_config(),
         )
@@ -104,7 +104,7 @@ def test_sovereignty_mode_respects_explicit_locality_requirement(tmp_path: Path)
 
 def test_sovereignty_mode_replay_fingerprint_is_deterministic(tmp_path: Path) -> None:
     settings = BridgeSettings(
-        sovereignty_file_path=write_sovereignty_config(
+        sovereignty_config_path=write_sovereignty_config(
             tmp_path / "sovereignty.json",
             base_sovereignty_config(),
         )
@@ -136,7 +136,7 @@ def test_sovereignty_mode_replay_fingerprint_is_deterministic(tmp_path: Path) ->
 @pytest.mark.asyncio
 async def test_sovereignty_mode_plan_returns_request_id(tmp_path: Path) -> None:
     settings = BridgeSettings(
-        sovereignty_file_path=write_sovereignty_config(
+        sovereignty_config_path=write_sovereignty_config(
             tmp_path / "sovereignty.json",
             base_sovereignty_config(),
         ),

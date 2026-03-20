@@ -62,3 +62,41 @@
   “do it automatically.” This keeps blast radius low while still making Phase 4
   capabilities concrete and testable.
 
+## Phase 5 — Completion report (Documentation & planning consistency)
+
+**Scope delivered**
+
+- Normalized planning-module settings to `*_config_path` on `BridgeSettings`,
+  with canonical `BRIDGE_*_CONFIG_PATH` environment variables and legacy
+  `BRIDGE_*_FILE_PATH` fallbacks centralized in `planning_config.py` (Docker
+  Compose uses nested defaults so older `.env` keys keep working).
+- Added [`docs/mcp-control-plane.md`](../docs/mcp-control-plane.md) and
+  contract tests so every registered MCP tool, every
+  `infrastructure/policy/*.{local,prod}.json` stem, and every planning `BRIDGE_*`
+  key in `planning_config.py` stays documented.
+- Added [`docs/architecture.md`](../docs/architecture.md) as the **release-ready
+  architecture index** (Compose index table, network tiers, security,
+  observability, config boundaries, release checklist) plus
+  [`tests/test_architecture_index.py`](../tests/test_architecture_index.py) and
+  a README pointer under Architecture Overview.
+
+**Telemetry**
+
+- No new OpenTelemetry instrumentation in Phase 5; behavior unchanged.
+  Documentation references existing Alloy / OTLP wiring.
+
+**Lessons**
+
+- Treat “documentation drift” like schema drift: contract tests that parse
+  `server.py` (MCP tools), glob policy files, and read `planning_config.py`
+  catch omissions before release.
+- A dedicated `docs/architecture.md` keeps README narrative short while still
+  giving reviewers a single checklist-driven index.
+- Optional roadmap items are safest to implement with the same test-first
+  discipline as code so they do not rot.
+
+---
+
+**Staff Engineer approval:** Phase 5 is complete. There is **no Phase 6** in
+`tasks/todo.md` yet. Confirm approval to add a new roadmap phase, or specify the
+next phased work to ingest.

@@ -26,6 +26,8 @@ from starlette.responses import JSONResponse
 from starlette.routing import Mount, Route
 import uvicorn
 
+from n8n_bridge.planning_config import PLANNING_CONFIG_BINDINGS, first_non_empty_env
+
 type JSONPrimitive = str | int | float | bool | None
 type JSONValue = JSONPrimitive | dict[str, "JSONValue"] | list["JSONValue"]
 
@@ -52,16 +54,16 @@ class BridgeSettings(BaseModel):
     op_connect_token: str | None = None
     bridge_access_token: str | None = None
     audit_ledger_path: str = "/tmp/n8n-bridge/audit-ledger.jsonl"
-    policy_file_path: str | None = None
-    routing_file_path: str | None = None
-    vector_memory_policy_file_path: str | None = None
-    rollout_file_path: str | None = None
-    failure_mode_file_path: str | None = None
-    confidential_execution_file_path: str | None = None
-    agent_control_plane_file_path: str | None = None
-    compliance_platform_file_path: str | None = None
-    autonomous_optimization_file_path: str | None = None
-    sovereignty_file_path: str | None = None
+    mcp_policy_config_path: str | None = None
+    model_routing_config_path: str | None = None
+    vector_memory_config_path: str | None = None
+    progressive_rollout_config_path: str | None = None
+    failure_mode_config_path: str | None = None
+    confidential_execution_config_path: str | None = None
+    agent_control_plane_config_path: str | None = None
+    compliance_platform_config_path: str | None = None
+    autonomous_optimization_config_path: str | None = None
+    sovereignty_config_path: str | None = None
     request_timeout_seconds: float = Field(default=15.0, gt=0)
     idempotency_ttl_seconds: float = Field(default=300.0, ge=0)
 
@@ -392,6 +394,13 @@ class IdempotencyCache:
             self._entries[key] = (expires_at, dict(value))
 
 
+def _planning_config_path_kwargs() -> dict[str, str | None]:
+    return {
+        b.settings_field: first_non_empty_env(os.environ, *b.env_keys)
+        for b in PLANNING_CONFIG_BINDINGS
+    }
+
+
 @lru_cache(maxsize=1)
 def get_settings() -> BridgeSettings:
     return BridgeSettings(
@@ -405,16 +414,7 @@ def get_settings() -> BridgeSettings:
             "BRIDGE_AUDIT_LEDGER_PATH",
             "/tmp/n8n-bridge/audit-ledger.jsonl",
         ),
-        policy_file_path=os.getenv("BRIDGE_POLICY_FILE_PATH"),
-        routing_file_path=os.getenv("BRIDGE_ROUTING_FILE_PATH"),
-        vector_memory_policy_file_path=os.getenv("BRIDGE_VECTOR_MEMORY_POLICY_FILE_PATH"),
-        rollout_file_path=os.getenv("BRIDGE_ROLLOUT_FILE_PATH"),
-        failure_mode_file_path=os.getenv("BRIDGE_FAILURE_MODE_FILE_PATH"),
-        confidential_execution_file_path=os.getenv("BRIDGE_CONFIDENTIAL_EXECUTION_FILE_PATH"),
-        agent_control_plane_file_path=os.getenv("BRIDGE_AGENT_CONTROL_PLANE_FILE_PATH"),
-        compliance_platform_file_path=os.getenv("BRIDGE_COMPLIANCE_PLATFORM_FILE_PATH"),
-        autonomous_optimization_file_path=os.getenv("BRIDGE_AUTONOMOUS_OPTIMIZATION_FILE_PATH"),
-        sovereignty_file_path=os.getenv("BRIDGE_SOVEREIGNTY_FILE_PATH"),
+        **_planning_config_path_kwargs(),
         request_timeout_seconds=float(os.getenv("BRIDGE_REQUEST_TIMEOUT_SECONDS", "15")),
         idempotency_ttl_seconds=float(os.getenv("BRIDGE_IDEMPOTENCY_TTL_SECONDS", "300")),
     )
@@ -547,8 +547,8 @@ def _cached_policy_engine(policy_file_path: str) -> PolicyEngine:
 
 
 def build_policy_engine(settings: BridgeSettings) -> PolicyEngine:
-    if settings.policy_file_path:
-        return _cached_policy_engine(settings.policy_file_path)
+    if settings.mcp_policy_config_path:
+        return _cached_policy_engine(settings.mcp_policy_config_path)
     return PolicyEngine(BridgePolicy(default_action="allow"))
 
 
@@ -686,8 +686,8 @@ def _cached_model_router(routing_file_path: str) -> ModelRouter:
 
 
 def build_model_router(settings: BridgeSettings) -> ModelRouter:
-    if settings.routing_file_path:
-        return _cached_model_router(settings.routing_file_path)
+    if settings.model_routing_config_path:
+        return _cached_model_router(settings.model_routing_config_path)
     return ModelRouter(ModelRoutingConfig(default_route=None, routes={}))
 
 
@@ -793,8 +793,8 @@ def _cached_vector_memory_lifecycle_engine(policy_file_path: str) -> VectorMemor
 
 
 def build_vector_memory_lifecycle_engine(settings: BridgeSettings) -> VectorMemoryLifecycleEngine:
-    if settings.vector_memory_policy_file_path:
-        return _cached_vector_memory_lifecycle_engine(settings.vector_memory_policy_file_path)
+    if settings.vector_memory_config_path:
+        return _cached_vector_memory_lifecycle_engine(settings.vector_memory_config_path)
     return VectorMemoryLifecycleEngine(VectorMemoryPolicyConfig())
 
 
@@ -890,8 +890,8 @@ def _cached_progressive_rollout_engine(rollout_file_path: str) -> ProgressiveRol
 
 
 def build_progressive_rollout_engine(settings: BridgeSettings) -> ProgressiveRolloutEngine:
-    if settings.rollout_file_path:
-        return _cached_progressive_rollout_engine(settings.rollout_file_path)
+    if settings.progressive_rollout_config_path:
+        return _cached_progressive_rollout_engine(settings.progressive_rollout_config_path)
     return ProgressiveRolloutEngine(ProgressiveRolloutConfig())
 
 
@@ -937,8 +937,8 @@ def _cached_failure_mode_engine(failure_mode_file_path: str) -> FailureModeEngin
 
 
 def build_failure_mode_engine(settings: BridgeSettings) -> FailureModeEngine:
-    if settings.failure_mode_file_path:
-        return _cached_failure_mode_engine(settings.failure_mode_file_path)
+    if settings.failure_mode_config_path:
+        return _cached_failure_mode_engine(settings.failure_mode_config_path)
     return FailureModeEngine(FailureModeConfig())
 
 
@@ -1012,8 +1012,8 @@ def _cached_confidential_execution_engine(confidential_execution_file_path: str)
 
 
 def build_confidential_execution_engine(settings: BridgeSettings) -> ConfidentialExecutionEngine:
-    if settings.confidential_execution_file_path:
-        return _cached_confidential_execution_engine(settings.confidential_execution_file_path)
+    if settings.confidential_execution_config_path:
+        return _cached_confidential_execution_engine(settings.confidential_execution_config_path)
     return ConfidentialExecutionEngine(ConfidentialExecutionConfig())
 
 
@@ -1069,8 +1069,8 @@ def _cached_agent_control_plane_engine(agent_control_plane_file_path: str) -> Ag
 
 
 def build_agent_control_plane_engine(settings: BridgeSettings) -> AgentControlPlaneEngine:
-    if settings.agent_control_plane_file_path:
-        return _cached_agent_control_plane_engine(settings.agent_control_plane_file_path)
+    if settings.agent_control_plane_config_path:
+        return _cached_agent_control_plane_engine(settings.agent_control_plane_config_path)
     return AgentControlPlaneEngine(AgentControlPlaneConfig())
 
 
@@ -1156,8 +1156,8 @@ def _cached_compliance_platform_engine(compliance_platform_file_path: str) -> Co
 
 
 def build_compliance_platform_engine(settings: BridgeSettings) -> CompliancePlatformEngine:
-    if settings.compliance_platform_file_path:
-        return _cached_compliance_platform_engine(settings.compliance_platform_file_path)
+    if settings.compliance_platform_config_path:
+        return _cached_compliance_platform_engine(settings.compliance_platform_config_path)
     return CompliancePlatformEngine(CompliancePlatformConfig())
 
 
@@ -1175,24 +1175,29 @@ class AutonomousOptimizationEngine:
             raise RuntimeError(f"Unknown optimization route '{request.route_name}'.")
 
         reasons: list[str] = []
-        action = "retain_route"
-        budget_adjustment_required = False
+        latency_exceeded = route.current_p95_latency_ms > objective.max_p95_latency_ms
+        cost_exceeded = route.current_cost_per_1k_tokens_usd > objective.max_cost_per_1k_tokens_usd
+        error_rate_exceeded = route.current_error_rate > objective.max_error_rate
 
-        if route.current_p95_latency_ms > objective.max_p95_latency_ms:
-            action = "deprioritize_route"
+        if latency_exceeded:
             reasons.append("latency target exceeded")
-
-        if route.current_cost_per_1k_tokens_usd > objective.max_cost_per_1k_tokens_usd:
-            action = "cap_route_budget"
-            budget_adjustment_required = True
+        if cost_exceeded:
             reasons.append("cost target exceeded")
-
-        if route.current_error_rate > objective.max_error_rate:
-            action = "deprioritize_route"
+        if error_rate_exceeded:
             reasons.append("error-rate target exceeded")
 
         if not reasons:
+            action = "retain_route"
+            budget_adjustment_required = False
             reasons.append("route remains within optimization targets")
+        else:
+            budget_adjustment_required = cost_exceeded
+            if cost_exceeded:
+                action = "cap_route_budget"
+            elif latency_exceeded:
+                action = "deprioritize_route"
+            else:
+                action = "deprioritize_route"
 
         return {
             "objective_key": request.objective_key,
@@ -1219,8 +1224,8 @@ def _cached_autonomous_optimization_engine(autonomous_optimization_file_path: st
 
 
 def build_autonomous_optimization_engine(settings: BridgeSettings) -> AutonomousOptimizationEngine:
-    if settings.autonomous_optimization_file_path:
-        return _cached_autonomous_optimization_engine(settings.autonomous_optimization_file_path)
+    if settings.autonomous_optimization_config_path:
+        return _cached_autonomous_optimization_engine(settings.autonomous_optimization_config_path)
     return AutonomousOptimizationEngine(AutonomousOptimizationConfig())
 
 
@@ -1274,8 +1279,8 @@ def _cached_sovereignty_engine(sovereignty_file_path: str) -> SovereigntyEngine:
 
 
 def build_sovereignty_engine(settings: BridgeSettings) -> SovereigntyEngine:
-    if settings.sovereignty_file_path:
-        return _cached_sovereignty_engine(settings.sovereignty_file_path)
+    if settings.sovereignty_config_path:
+        return _cached_sovereignty_engine(settings.sovereignty_config_path)
     return SovereigntyEngine(SovereigntyConfig())
 
 

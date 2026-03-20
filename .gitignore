@@ -1,7 +1,9 @@
 .env.local
 .env.prod
+secrets/1password-credentials.json
 .mypy_cache/
 .pytest_cache/
+**/.coverage
 **/__pycache__/
 *.pyc
 *.pyo

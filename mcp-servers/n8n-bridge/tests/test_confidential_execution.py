@@ -65,7 +65,7 @@ def base_confidential_config() -> dict[str, object]:
 
 def test_confidential_execution_prefers_attested_gpu_for_restricted_gpu_workload(tmp_path: Path) -> None:
     settings = BridgeSettings(
-        confidential_execution_file_path=write_confidential_config(
+        confidential_execution_config_path=write_confidential_config(
             tmp_path / "confidential.json",
             base_confidential_config(),
         )
@@ -89,7 +89,7 @@ def test_confidential_execution_prefers_attested_gpu_for_restricted_gpu_workload
 
 def test_confidential_execution_rejects_targets_without_workload_identity(tmp_path: Path) -> None:
     settings = BridgeSettings(
-        confidential_execution_file_path=write_confidential_config(
+        confidential_execution_config_path=write_confidential_config(
             tmp_path / "confidential.json",
             base_confidential_config(),
         )
@@ -112,7 +112,7 @@ def test_confidential_execution_rejects_targets_without_workload_identity(tmp_pa
 
 def test_confidential_execution_replay_fingerprint_is_deterministic(tmp_path: Path) -> None:
     settings = BridgeSettings(
-        confidential_execution_file_path=write_confidential_config(
+        confidential_execution_config_path=write_confidential_config(
             tmp_path / "confidential.json",
             base_confidential_config(),
         )
@@ -148,7 +148,7 @@ def test_confidential_execution_replay_fingerprint_is_deterministic(tmp_path: Pa
 @pytest.mark.asyncio
 async def test_confidential_execution_plan_returns_request_id(tmp_path: Path) -> None:
     settings = BridgeSettings(
-        confidential_execution_file_path=write_confidential_config(
+        confidential_execution_config_path=write_confidential_config(
             tmp_path / "confidential.json",
             base_confidential_config(),
         ),

@@ -20,6 +20,7 @@ def test_ci_baseline_workflows_exist_and_cover_validation_security_and_updates()
     assert "make validate-prod" in ci_content
     assert "make validate-local-mac" in ci_content
     assert "make validate-local-windows" in ci_content
+    assert "make validate-local-core" in ci_content
     assert "python -m pytest tests mcp-servers/n8n-bridge/tests -q" in ci_content
     assert "python -m py_compile mcp-servers/n8n-bridge/src/n8n_bridge/server.py" in ci_content
 

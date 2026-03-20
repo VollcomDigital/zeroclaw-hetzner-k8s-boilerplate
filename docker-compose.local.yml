@@ -1,5 +1,12 @@
 name: hybrid-ai-agent-stack-local
 
+# Profiles (opt-in — always pass at least one):
+#   core      GPU-free smoke: Traefik, Alloy, Postgres, n8n, MCP bridge, Qdrant, 1Password Connect
+#   windows   Full local stack on Windows (adds vLLM + OpenClaw / NemoClaw / OpenWork)
+#   mac       Full local stack on Apple Silicon (adds Ollama + agents)
+#
+# Default dev remains: make dev-windows  (--profile windows)  or  make dev-mac  (--profile mac).
+
 x-local-runtime: &local_runtime
   restart: unless-stopped
   user: "${APP_UID:-1000}:${APP_GID:-1000}"
@@ -19,9 +26,15 @@ x-local-runtime: &local_runtime
 services:
   alloy:
     <<: *local_runtime
+    user: "0:0"
+    profiles:
+      - core
+      - windows
+      - mac
     image: grafana/alloy:v1.8.2
     command:
       - run
+      - --stability.level=experimental
       - /etc/alloy/config.alloy
       - --server.http.listen-addr=0.0.0.0:12345
     expose:
@@ -36,6 +49,11 @@ services:
 
   traefik:
     <<: *local_runtime
+    user: "0:0"
+    profiles:
+      - core
+      - windows
+      - mac
     image: traefik:v3.3
     command:
       - --configFile=/etc/traefik/traefik.yml
@@ -51,7 +69,19 @@ services:
 
   openwork:
     <<: *local_runtime
-    image: ${OPENWORK_IMAGE}
+    profiles:
+      - windows
+      - mac
+    image: python:3.12-alpine
+    command:
+      - python
+      - -m
+      - http.server
+      - "${OPENWORK_PORT:-3000}"
+      - --bind
+      - "0.0.0.0"
+      - --directory
+      - /workspace/frontend/openwork
     environment:
       PORT: "${OPENWORK_PORT:-3000}"
       OPENCLAW_BASE_URL: http://openclaw:${OPENCLAW_PORT:-18789}
@@ -79,6 +109,9 @@ services:
 
   openclaw:
     <<: *local_runtime
+    profiles:
+      - windows
+      - mac
     image: ${OPENCLAW_IMAGE}
     environment:
       LOCAL_LLM_BASE_URL: ${LOCAL_LLM_BASE_URL}
@@ -107,6 +140,9 @@ services:
 
   nemoclaw:
     <<: *local_runtime
+    profiles:
+      - windows
+      - mac
     image: ${NEMOCLAW_IMAGE}
     environment:
       OPENSHELL_SANDBOX_ROOT: /sandbox
@@ -184,6 +220,10 @@ services:
 
   1password-connect-api:
     <<: *local_runtime
+    profiles:
+      - core
+      - windows
+      - mac
     image: 1password/connect-api:latest
     environment:
       OP_HTTP_PORT: "8080"
@@ -199,6 +239,10 @@ services:
 
   1password-connect-sync:
     <<: *local_runtime
+    profiles:
+      - core
+      - windows
+      - mac
     image: 1password/connect-sync:latest
     environment:
       OP_HTTP_PORT: "8080"
@@ -214,6 +258,10 @@ services:
 
   postgres:
     <<: *local_runtime
+    profiles:
+      - core
+      - windows
+      - mac
     image: postgres:16-alpine
     environment:
       POSTGRES_DB: ${POSTGRES_DB}
@@ -228,6 +276,10 @@ services:
 
   n8n:
     <<: *local_runtime
+    profiles:
+      - core
+      - windows
+      - mac
     image: n8nio/n8n:latest
     environment:
       DB_TYPE: postgresdb
@@ -246,6 +298,8 @@ services:
       OTEL_SERVICE_NAME: n8n
       WEBHOOK_URL: http://${N8N_HOST}/
       TZ: ${TZ:-UTC}
+    ports:
+      - "127.0.0.1:5678:5678"
     expose:
       - "5678"
     depends_on:
@@ -266,21 +320,25 @@ services:
 
   mcp-server-n8n:
     <<: *local_runtime
+    profiles:
+      - core
+      - windows
+      - mac
     build:
       context: ./mcp-servers/n8n-bridge
     environment:
       BRIDGE_ACCESS_TOKEN: ${BRIDGE_ACCESS_TOKEN}
       BRIDGE_AUDIT_LEDGER_PATH: ${BRIDGE_AUDIT_LEDGER_PATH:-/var/lib/n8n-bridge/audit-ledger.jsonl}
-      BRIDGE_POLICY_FILE_PATH: ${BRIDGE_POLICY_FILE_PATH:-/etc/n8n-bridge/policy.json}
-      BRIDGE_ROUTING_FILE_PATH: ${BRIDGE_ROUTING_FILE_PATH:-/etc/n8n-bridge/model-routing.json}
-      BRIDGE_VECTOR_MEMORY_POLICY_FILE_PATH: ${BRIDGE_VECTOR_MEMORY_POLICY_FILE_PATH:-/etc/n8n-bridge/vector-memory-policy.json}
-      BRIDGE_ROLLOUT_FILE_PATH: ${BRIDGE_ROLLOUT_FILE_PATH:-/etc/n8n-bridge/rollout.json}
-      BRIDGE_FAILURE_MODE_FILE_PATH: ${BRIDGE_FAILURE_MODE_FILE_PATH:-/etc/n8n-bridge/failure-mode.json}
-      BRIDGE_CONFIDENTIAL_EXECUTION_FILE_PATH: ${BRIDGE_CONFIDENTIAL_EXECUTION_FILE_PATH:-/etc/n8n-bridge/confidential-execution.json}
-      BRIDGE_AGENT_CONTROL_PLANE_FILE_PATH: ${BRIDGE_AGENT_CONTROL_PLANE_FILE_PATH:-/etc/n8n-bridge/agent-control-plane.json}
-      BRIDGE_COMPLIANCE_PLATFORM_FILE_PATH: ${BRIDGE_COMPLIANCE_PLATFORM_FILE_PATH:-/etc/n8n-bridge/compliance-platform.json}
-      BRIDGE_AUTONOMOUS_OPTIMIZATION_FILE_PATH: ${BRIDGE_AUTONOMOUS_OPTIMIZATION_FILE_PATH:-/etc/n8n-bridge/autonomous-optimization.json}
-      BRIDGE_SOVEREIGNTY_FILE_PATH: ${BRIDGE_SOVEREIGNTY_FILE_PATH:-/etc/n8n-bridge/sovereignty.json}
+      BRIDGE_MCP_POLICY_CONFIG_PATH: ${BRIDGE_MCP_POLICY_CONFIG_PATH:-${BRIDGE_POLICY_FILE_PATH:-/etc/n8n-bridge/policy.json}}
+      BRIDGE_MODEL_ROUTING_CONFIG_PATH: ${BRIDGE_MODEL_ROUTING_CONFIG_PATH:-${BRIDGE_ROUTING_FILE_PATH:-/etc/n8n-bridge/model-routing.json}}
+      BRIDGE_VECTOR_MEMORY_CONFIG_PATH: ${BRIDGE_VECTOR_MEMORY_CONFIG_PATH:-${BRIDGE_VECTOR_MEMORY_POLICY_FILE_PATH:-/etc/n8n-bridge/vector-memory-policy.json}}
+      BRIDGE_PROGRESSIVE_ROLLOUT_CONFIG_PATH: ${BRIDGE_PROGRESSIVE_ROLLOUT_CONFIG_PATH:-${BRIDGE_ROLLOUT_FILE_PATH:-/etc/n8n-bridge/rollout.json}}
+      BRIDGE_FAILURE_MODE_CONFIG_PATH: ${BRIDGE_FAILURE_MODE_CONFIG_PATH:-${BRIDGE_FAILURE_MODE_FILE_PATH:-/etc/n8n-bridge/failure-mode.json}}
+      BRIDGE_CONFIDENTIAL_EXECUTION_CONFIG_PATH: ${BRIDGE_CONFIDENTIAL_EXECUTION_CONFIG_PATH:-${BRIDGE_CONFIDENTIAL_EXECUTION_FILE_PATH:-/etc/n8n-bridge/confidential-execution.json}}
+      BRIDGE_AGENT_CONTROL_PLANE_CONFIG_PATH: ${BRIDGE_AGENT_CONTROL_PLANE_CONFIG_PATH:-${BRIDGE_AGENT_CONTROL_PLANE_FILE_PATH:-/etc/n8n-bridge/agent-control-plane.json}}
+      BRIDGE_COMPLIANCE_PLATFORM_CONFIG_PATH: ${BRIDGE_COMPLIANCE_PLATFORM_CONFIG_PATH:-${BRIDGE_COMPLIANCE_PLATFORM_FILE_PATH:-/etc/n8n-bridge/compliance-platform.json}}
+      BRIDGE_AUTONOMOUS_OPTIMIZATION_CONFIG_PATH: ${BRIDGE_AUTONOMOUS_OPTIMIZATION_CONFIG_PATH:-${BRIDGE_AUTONOMOUS_OPTIMIZATION_FILE_PATH:-/etc/n8n-bridge/autonomous-optimization.json}}
+      BRIDGE_SOVEREIGNTY_CONFIG_PATH: ${BRIDGE_SOVEREIGNTY_CONFIG_PATH:-${BRIDGE_SOVEREIGNTY_FILE_PATH:-/etc/n8n-bridge/sovereignty.json}}
       MCP_HOST: 0.0.0.0
       MCP_PORT: "8000"
       N8N_BASE_URL: http://n8n:5678
@@ -315,6 +373,11 @@ services:
 
   qdrant:
     <<: *local_runtime
+    user: "0:0"
+    profiles:
+      - core
+      - windows
+      - mac
     image: qdrant/qdrant:latest
     environment:
       QDRANT__SERVICE__API_KEY: ${QDRANT_API_KEY}

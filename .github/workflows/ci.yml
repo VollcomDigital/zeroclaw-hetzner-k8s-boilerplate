@@ -44,6 +44,9 @@ jobs:
       - name: Validate local windows compose configuration
         run: make validate-local-windows
 
+      - name: Validate local core (no GPU / agents) compose configuration
+        run: make validate-local-core
+
   integration-matrix:
     runs-on: ubuntu-latest
     permissions:

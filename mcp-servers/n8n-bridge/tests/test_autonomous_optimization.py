@@ -48,7 +48,7 @@ def base_optimization_config() -> dict[str, object]:
 
 def test_autonomous_optimization_recommends_failover_for_latency_regression(tmp_path: Path) -> None:
     settings = BridgeSettings(
-        autonomous_optimization_file_path=write_optimization_config(
+        autonomous_optimization_config_path=write_optimization_config(
             tmp_path / "optimization.json",
             base_optimization_config(),
         )
@@ -67,9 +67,39 @@ def test_autonomous_optimization_recommends_failover_for_latency_regression(tmp_
     assert "latency" in " ".join(result["reasons"]).lower()
 
 
+def test_autonomous_optimization_cost_violation_takes_precedence_over_error_rate(tmp_path: Path) -> None:
+    payload = base_optimization_config()
+    payload["routes"]["multi_bad"] = {
+        "current_p95_latency_ms": 900,
+        "current_error_rate": 0.05,
+        "current_cost_per_1k_tokens_usd": 0.03,
+        "recommended_priority_delta": 0,
+    }
+    settings = BridgeSettings(
+        autonomous_optimization_config_path=write_optimization_config(
+            tmp_path / "optimization.json",
+            payload,
+        )
+    )
+    engine = build_autonomous_optimization_engine(settings)
+    request = AutonomousOptimizationRequest(
+        objective_key="latency_sensitive",
+        route_name="multi_bad",
+        subject_scope="tenant-a",
+    )
+
+    result = engine.plan(request)
+
+    assert result["action"] == "cap_route_budget"
+    assert result["budget_adjustment_required"] is True
+    joined = " ".join(result["reasons"])
+    assert "cost" in joined.lower()
+    assert "error-rate" in joined.lower()
+
+
 def test_autonomous_optimization_recommends_cost_cap_for_expensive_route(tmp_path: Path) -> None:
     settings = BridgeSettings(
-        autonomous_optimization_file_path=write_optimization_config(
+        autonomous_optimization_config_path=write_optimization_config(
             tmp_path / "optimization.json",
             base_optimization_config(),
         )
@@ -90,7 +120,7 @@ def test_autonomous_optimization_recommends_cost_cap_for_expensive_route(tmp_pat
 
 def test_autonomous_optimization_replay_fingerprint_is_deterministic(tmp_path: Path) -> None:
     settings = BridgeSettings(
-        autonomous_optimization_file_path=write_optimization_config(
+        autonomous_optimization_config_path=write_optimization_config(
             tmp_path / "optimization.json",
             base_optimization_config(),
         )
@@ -120,7 +150,7 @@ def test_autonomous_optimization_replay_fingerprint_is_deterministic(tmp_path: P
 @pytest.mark.asyncio
 async def test_autonomous_optimization_plan_returns_request_id(tmp_path: Path) -> None:
     settings = BridgeSettings(
-        autonomous_optimization_file_path=write_optimization_config(
+        autonomous_optimization_config_path=write_optimization_config(
             tmp_path / "optimization.json",
             base_optimization_config(),
         ),

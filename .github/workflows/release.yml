@@ -56,16 +56,31 @@ jobs:
           provenance: mode=max
 
       - name: Generate release manifest
+        env:
+          GH_REPOSITORY: ${{ github.repository }}
+          GH_REF: ${{ github.ref }}
+          GH_SHA: ${{ github.sha }}
+          GH_REPOSITORY_OWNER: ${{ github.repository_owner }}
+          META_TAGS: ${{ steps.meta.outputs.tags }}
         run: |
-          cat > release-manifest.json <<'EOF'
-          {
-            "repository": "${{ github.repository }}",
-            "ref": "${{ github.ref }}",
-            "sha": "${{ github.sha }}",
-            "image": "ghcr.io/${{ github.repository_owner }}/mcp-n8n-bridge",
-            "image_tags": "${{ steps.meta.outputs.tags }}"
+          python3 <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          tags = [line.strip() for line in os.environ["META_TAGS"].splitlines() if line.strip()]
+          manifest = {
+              "repository": os.environ["GH_REPOSITORY"],
+              "ref": os.environ["GH_REF"],
+              "sha": os.environ["GH_SHA"],
+              "image": f"ghcr.io/{os.environ['GH_REPOSITORY_OWNER']}/mcp-n8n-bridge",
+              "image_tags": tags,
           }
-          EOF
+          Path("release-manifest.json").write_text(
+              json.dumps(manifest, indent=2) + "\n",
+              encoding="utf-8",
+          )
+          PY
 
       - name: Upload release artifacts
         uses: actions/upload-artifact@v4

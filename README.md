@@ -28,6 +28,8 @@ Compose-based hybrid stack is the intended default.
 
 ## Architecture Overview
 
+Release-oriented component map and review checklist: [`docs/architecture.md`](docs/architecture.md).
+
 ### Primary runtime: Docker Compose hybrid stack
 
 ```
@@ -124,6 +126,12 @@ Makefile                         # Standard local/prod orchestration commands
 
 ### Local development
 
+`make dev-mac` / `make dev-windows` expect **Bash** (e.g. Git for Windows). They copy `.env.local.example` → `.env.local` when missing and seed `secrets/1password-credentials.json` from the example file so Compose bind mounts succeed (replace that file with a real Connect bundle before using MCP secret tools).
+
+For a **GPU-free** local slice (infra + n8n + MCP bridge only, no agents), use `make dev-core` — intended for smoke tests or constrained hosts, not day-to-day development. See `docs/architecture.md` for profile details.
+
+**n8n** is also bound to **http://127.0.0.1:5678** on the host (in addition to Traefik + `N8N_HOST`) so you can open the UI when the Docker provider for Traefik misbehaves on some Docker Desktop builds.
+
 ```bash
 cp .env.local.example .env.local
 make dev-mac
@@ -148,6 +156,12 @@ make prod
 ```bash
 kubectl apply -k k8s/apps/zeroclaw-assistant/
 ```
+
+---
+
+## MCP control plane
+
+Operational reference for MCP tools, policy bundles, and bridge environment variables: [`docs/mcp-control-plane.md`](docs/mcp-control-plane.md).
 
 ---
 

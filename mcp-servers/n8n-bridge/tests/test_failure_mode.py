@@ -43,7 +43,7 @@ def base_failure_mode_config() -> dict[str, object]:
 
 def test_failure_mode_engine_selects_retry_for_transient_upstream_issue(tmp_path: Path) -> None:
     settings = BridgeSettings(
-        failure_mode_file_path=write_failure_mode_config(
+        failure_mode_config_path=write_failure_mode_config(
             tmp_path / "failure-mode.json",
             base_failure_mode_config(),
         )
@@ -66,7 +66,7 @@ def test_failure_mode_engine_selects_retry_for_transient_upstream_issue(tmp_path
 
 def test_failure_mode_engine_selects_failover_for_model_route_outage(tmp_path: Path) -> None:
     settings = BridgeSettings(
-        failure_mode_file_path=write_failure_mode_config(
+        failure_mode_config_path=write_failure_mode_config(
             tmp_path / "failure-mode.json",
             base_failure_mode_config(),
         )
@@ -89,7 +89,7 @@ def test_failure_mode_engine_selects_failover_for_model_route_outage(tmp_path: P
 
 def test_failure_mode_engine_halts_on_secret_auth_error(tmp_path: Path) -> None:
     settings = BridgeSettings(
-        failure_mode_file_path=write_failure_mode_config(
+        failure_mode_config_path=write_failure_mode_config(
             tmp_path / "failure-mode.json",
             base_failure_mode_config(),
         )
@@ -112,7 +112,7 @@ def test_failure_mode_engine_halts_on_secret_auth_error(tmp_path: Path) -> None:
 @pytest.mark.asyncio
 async def test_failure_mode_plan_records_request_id_and_action(tmp_path: Path) -> None:
     settings = BridgeSettings(
-        failure_mode_file_path=write_failure_mode_config(
+        failure_mode_config_path=write_failure_mode_config(
             tmp_path / "failure-mode.json",
             base_failure_mode_config(),
         ),

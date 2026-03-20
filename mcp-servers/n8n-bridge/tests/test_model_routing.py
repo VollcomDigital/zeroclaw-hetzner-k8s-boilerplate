@@ -20,7 +20,7 @@ def write_routing_config(path: Path, payload: dict[str, object]) -> str:
 
 def test_model_router_prefers_low_latency_local_route_for_internal_requests(tmp_path: Path) -> None:
     settings = BridgeSettings(
-        routing_file_path=write_routing_config(
+        model_routing_config_path=write_routing_config(
             tmp_path / "routing.json",
             {
                 "version": 1,
@@ -72,7 +72,7 @@ def test_model_router_prefers_low_latency_local_route_for_internal_requests(tmp_
 
 def test_model_router_routes_restricted_data_to_secure_remote(tmp_path: Path) -> None:
     settings = BridgeSettings(
-        routing_file_path=write_routing_config(
+        model_routing_config_path=write_routing_config(
             tmp_path / "routing.json",
             {
                 "version": 1,
@@ -124,7 +124,7 @@ def test_model_router_routes_restricted_data_to_secure_remote(tmp_path: Path) ->
 
 def test_model_router_replay_fingerprint_is_deterministic(tmp_path: Path) -> None:
     settings = BridgeSettings(
-        routing_file_path=write_routing_config(
+        model_routing_config_path=write_routing_config(
             tmp_path / "routing.json",
             {
                 "version": 1,
@@ -174,7 +174,7 @@ def test_model_router_replay_fingerprint_is_deterministic(tmp_path: Path) -> Non
 
 def test_model_router_raises_when_no_route_matches(tmp_path: Path) -> None:
     settings = BridgeSettings(
-        routing_file_path=write_routing_config(
+        model_routing_config_path=write_routing_config(
             tmp_path / "routing.json",
             {
                 "version": 1,
@@ -211,7 +211,7 @@ def test_model_router_raises_when_no_route_matches(tmp_path: Path) -> None:
 
 def test_model_router_skips_gpu_route_when_utilization_exceeds_threshold(tmp_path: Path) -> None:
     settings = BridgeSettings(
-        routing_file_path=write_routing_config(
+        model_routing_config_path=write_routing_config(
             tmp_path / "routing.json",
             {
                 "version": 1,
@@ -264,7 +264,7 @@ def test_model_router_skips_gpu_route_when_utilization_exceeds_threshold(tmp_pat
 
 def test_model_router_skips_route_when_projected_cost_exceeds_budget(tmp_path: Path) -> None:
     settings = BridgeSettings(
-        routing_file_path=write_routing_config(
+        model_routing_config_path=write_routing_config(
             tmp_path / "routing.json",
             {
                 "version": 1,

@@ -26,7 +26,7 @@ def write_policy(path: Path, payload: dict[str, object]) -> str:
 
 def test_policy_engine_allows_explicit_workflow_and_secret_scope(tmp_path: Path) -> None:
     settings = BridgeSettings(
-        policy_file_path=write_policy(
+        mcp_policy_config_path=write_policy(
             tmp_path / "policy.json",
             {
                 "version": 1,
@@ -63,7 +63,7 @@ def test_policy_engine_allows_explicit_workflow_and_secret_scope(tmp_path: Path)
 async def test_trigger_n8n_workflow_denies_disallowed_webhook(tmp_path: Path) -> None:
     settings = BridgeSettings(
         n8n_base_url="http://n8n:5678",
-        policy_file_path=write_policy(
+        mcp_policy_config_path=write_policy(
             tmp_path / "policy.json",
             {
                 "version": 1,
@@ -88,7 +88,7 @@ async def test_get_1password_secret_denies_disallowed_field_scope(tmp_path: Path
     settings = BridgeSettings(
         op_connect_url="http://1password-connect-api:8080",
         op_connect_token="development-token",
-        policy_file_path=write_policy(
+        mcp_policy_config_path=write_policy(
             tmp_path / "policy.json",
             {
                 "version": 1,

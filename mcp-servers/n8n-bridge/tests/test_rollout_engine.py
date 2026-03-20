@@ -51,7 +51,7 @@ def base_rollout_config() -> dict[str, object]:
 
 def test_rollout_engine_shadow_mode_routes_to_shadow_and_primary(tmp_path: Path) -> None:
     settings = BridgeSettings(
-        rollout_file_path=write_rollout_config(tmp_path / "rollout.json", base_rollout_config())
+        progressive_rollout_config_path=write_rollout_config(tmp_path / "rollout.json", base_rollout_config())
     )
     engine = build_progressive_rollout_engine(settings)
     request = ProgressiveRolloutRequest(
@@ -69,7 +69,7 @@ def test_rollout_engine_shadow_mode_routes_to_shadow_and_primary(tmp_path: Path)
 
 def test_rollout_engine_canary_is_deterministic_for_subject(tmp_path: Path) -> None:
     settings = BridgeSettings(
-        rollout_file_path=write_rollout_config(tmp_path / "rollout.json", base_rollout_config())
+        progressive_rollout_config_path=write_rollout_config(tmp_path / "rollout.json", base_rollout_config())
     )
     engine = build_progressive_rollout_engine(settings)
     request = ProgressiveRolloutRequest(
@@ -89,7 +89,7 @@ def test_rollout_engine_canary_is_deterministic_for_subject(tmp_path: Path) -> N
 @pytest.mark.asyncio
 async def test_rollout_engine_prompt_canary_records_prompt_versions(tmp_path: Path) -> None:
     settings = BridgeSettings(
-        rollout_file_path=write_rollout_config(tmp_path / "rollout.json", base_rollout_config()),
+        progressive_rollout_config_path=write_rollout_config(tmp_path / "rollout.json", base_rollout_config()),
         audit_ledger_path=str(tmp_path / "audit-ledger.jsonl"),
     )
     request = ProgressiveRolloutRequest(
@@ -108,7 +108,7 @@ async def test_rollout_engine_prompt_canary_records_prompt_versions(tmp_path: Pa
 
 def test_rollout_engine_rejects_unknown_rollout_key(tmp_path: Path) -> None:
     settings = BridgeSettings(
-        rollout_file_path=write_rollout_config(tmp_path / "rollout.json", base_rollout_config())
+        progressive_rollout_config_path=write_rollout_config(tmp_path / "rollout.json", base_rollout_config())
     )
     engine = build_progressive_rollout_engine(settings)
     request = ProgressiveRolloutRequest(

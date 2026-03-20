@@ -39,7 +39,7 @@ def base_compliance_config() -> dict[str, object]:
 
 def test_compliance_platform_plans_gdpr_erasure_targets(tmp_path: Path) -> None:
     settings = BridgeSettings(
-        compliance_platform_file_path=write_compliance_config(
+        compliance_platform_config_path=write_compliance_config(
             tmp_path / "compliance.json",
             base_compliance_config(),
         )
@@ -63,7 +63,7 @@ def test_compliance_platform_plans_gdpr_erasure_targets(tmp_path: Path) -> None:
 
 def test_compliance_platform_legal_hold_blocks_erasure(tmp_path: Path) -> None:
     settings = BridgeSettings(
-        compliance_platform_file_path=write_compliance_config(
+        compliance_platform_config_path=write_compliance_config(
             tmp_path / "compliance.json",
             base_compliance_config(),
         )
@@ -87,7 +87,7 @@ def test_compliance_platform_legal_hold_blocks_erasure(tmp_path: Path) -> None:
 
 def test_compliance_platform_plans_audit_evidence_bundle(tmp_path: Path) -> None:
     settings = BridgeSettings(
-        compliance_platform_file_path=write_compliance_config(
+        compliance_platform_config_path=write_compliance_config(
             tmp_path / "compliance.json",
             base_compliance_config(),
         )
@@ -111,7 +111,7 @@ def test_compliance_platform_plans_audit_evidence_bundle(tmp_path: Path) -> None
 
 def test_compliance_platform_replay_fingerprint_is_deterministic(tmp_path: Path) -> None:
     settings = BridgeSettings(
-        compliance_platform_file_path=write_compliance_config(
+        compliance_platform_config_path=write_compliance_config(
             tmp_path / "compliance.json",
             base_compliance_config(),
         )
@@ -147,7 +147,7 @@ def test_compliance_platform_replay_fingerprint_is_deterministic(tmp_path: Path)
 @pytest.mark.asyncio
 async def test_compliance_platform_plan_returns_request_id(tmp_path: Path) -> None:
     settings = BridgeSettings(
-        compliance_platform_file_path=write_compliance_config(
+        compliance_platform_config_path=write_compliance_config(
             tmp_path / "compliance.json",
             base_compliance_config(),
         ),

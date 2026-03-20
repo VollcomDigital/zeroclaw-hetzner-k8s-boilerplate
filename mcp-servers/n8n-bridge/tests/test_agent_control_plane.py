@@ -53,7 +53,7 @@ def base_control_plane_config() -> dict[str, object]:
 
 def test_agent_control_plane_assigns_default_policy_pack_and_quota(tmp_path: Path) -> None:
     settings = BridgeSettings(
-        agent_control_plane_file_path=write_control_plane_config(
+        agent_control_plane_config_path=write_control_plane_config(
             tmp_path / "agent-control.json",
             base_control_plane_config(),
         )
@@ -75,7 +75,7 @@ def test_agent_control_plane_assigns_default_policy_pack_and_quota(tmp_path: Pat
 
 def test_agent_control_plane_honors_allowed_requested_policy_pack(tmp_path: Path) -> None:
     settings = BridgeSettings(
-        agent_control_plane_file_path=write_control_plane_config(
+        agent_control_plane_config_path=write_control_plane_config(
             tmp_path / "agent-control.json",
             base_control_plane_config(),
         )
@@ -97,7 +97,7 @@ def test_agent_control_plane_honors_allowed_requested_policy_pack(tmp_path: Path
 
 def test_agent_control_plane_rejects_disallowed_capability(tmp_path: Path) -> None:
     settings = BridgeSettings(
-        agent_control_plane_file_path=write_control_plane_config(
+        agent_control_plane_config_path=write_control_plane_config(
             tmp_path / "agent-control.json",
             base_control_plane_config(),
         )
@@ -115,7 +115,7 @@ def test_agent_control_plane_rejects_disallowed_capability(tmp_path: Path) -> No
 
 def test_agent_control_plane_replay_fingerprint_is_deterministic(tmp_path: Path) -> None:
     settings = BridgeSettings(
-        agent_control_plane_file_path=write_control_plane_config(
+        agent_control_plane_config_path=write_control_plane_config(
             tmp_path / "agent-control.json",
             base_control_plane_config(),
         )
@@ -147,7 +147,7 @@ def test_agent_control_plane_replay_fingerprint_is_deterministic(tmp_path: Path)
 @pytest.mark.asyncio
 async def test_agent_control_plane_plan_returns_request_id(tmp_path: Path) -> None:
     settings = BridgeSettings(
-        agent_control_plane_file_path=write_control_plane_config(
+        agent_control_plane_config_path=write_control_plane_config(
             tmp_path / "agent-control.json",
             base_control_plane_config(),
         ),
