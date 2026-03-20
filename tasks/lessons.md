@@ -50,3 +50,15 @@
   `failover`, `degrade`, `halt`) first. Execution of those actions can then be
   delegated later to a more privileged orchestrator.
 
+## Phase 4
+
+- High-vision architecture can still be delivered safely inside a limited repo
+  scope by expressing platform capabilities as declarative planning engines
+  first, then wiring them through consistent audit/policy/runtime config paths.
+- Confidential execution, tenancy, compliance, optimization, and sovereignty are
+  easier to reason about when every decision shares the same deterministic
+  request fingerprint and audit ledger contract.
+- For sensitive systems, “what should happen?” planning is a safer precursor to
+  “do it automatically.” This keeps blast radius low while still making Phase 4
+  capabilities concrete and testable.
+

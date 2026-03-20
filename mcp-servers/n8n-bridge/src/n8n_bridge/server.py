@@ -61,6 +61,7 @@ class BridgeSettings(BaseModel):
     agent_control_plane_file_path: str | None = None
     compliance_platform_file_path: str | None = None
     autonomous_optimization_file_path: str | None = None
+    sovereignty_file_path: str | None = None
     request_timeout_seconds: float = Field(default=15.0, gt=0)
     idempotency_ttl_seconds: float = Field(default=300.0, ge=0)
 
@@ -344,6 +345,29 @@ class AutonomousOptimizationRequest(BaseModel):
     subject_scope: str = Field(min_length=1)
 
 
+class SovereigntyRule(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    mode: str
+    allowed_regions: list[str] = Field(default_factory=list)
+
+
+class SovereigntyConfig(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    version: int = 1
+    rules: dict[str, SovereigntyRule] = Field(default_factory=dict)
+
+
+class SovereigntyRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    data_classification: str = Field(min_length=1)
+    source_region: str = Field(min_length=1)
+    target_region: str = Field(min_length=1)
+    requires_local_processing: bool = False
+
+
 class IdempotencyCache:
     def __init__(self, ttl_seconds: float) -> None:
         self._ttl_seconds = ttl_seconds
@@ -390,6 +414,7 @@ def get_settings() -> BridgeSettings:
         agent_control_plane_file_path=os.getenv("BRIDGE_AGENT_CONTROL_PLANE_FILE_PATH"),
         compliance_platform_file_path=os.getenv("BRIDGE_COMPLIANCE_PLATFORM_FILE_PATH"),
         autonomous_optimization_file_path=os.getenv("BRIDGE_AUTONOMOUS_OPTIMIZATION_FILE_PATH"),
+        sovereignty_file_path=os.getenv("BRIDGE_SOVEREIGNTY_FILE_PATH"),
         request_timeout_seconds=float(os.getenv("BRIDGE_REQUEST_TIMEOUT_SECONDS", "15")),
         idempotency_ttl_seconds=float(os.getenv("BRIDGE_IDEMPOTENCY_TTL_SECONDS", "300")),
     )
@@ -1197,6 +1222,61 @@ def build_autonomous_optimization_engine(settings: BridgeSettings) -> Autonomous
     if settings.autonomous_optimization_file_path:
         return _cached_autonomous_optimization_engine(settings.autonomous_optimization_file_path)
     return AutonomousOptimizationEngine(AutonomousOptimizationConfig())
+
+
+class SovereigntyEngine:
+    def __init__(self, config: SovereigntyConfig) -> None:
+        self._config = config
+
+    def plan(self, request: SovereigntyRequest) -> dict[str, JSONValue]:
+        rule = self._config.rules.get(request.data_classification)
+        if rule is None:
+            raise RuntimeError(f"Unknown sovereignty rule for classification '{request.data_classification}'.")
+
+        mode = rule.mode
+        allowed = True
+        reasons: list[str] = []
+
+        if request.requires_local_processing:
+            mode = "local_only"
+            allowed = request.target_region == "local"
+            reasons.append("explicit local processing requirement applied")
+        elif mode == "local_only":
+            allowed = request.target_region == "local"
+            reasons.append("restricted data must remain local")
+        elif mode == "in_region":
+            allowed = request.target_region in rule.allowed_regions or "*" in rule.allowed_regions
+            reasons.append("internal data must remain within allowed residency regions")
+        else:
+            allowed = True
+            reasons.append("cross-boundary transfer is permitted for this classification")
+
+        return {
+            "mode": mode,
+            "allowed": allowed,
+            "allowed_regions": rule.allowed_regions,
+            "reasons": reasons,
+            "replay_fingerprint": build_replay_fingerprint(
+                "plan_sovereignty_mode",
+                request.model_dump(mode="json"),
+            ),
+        }
+
+
+def _load_sovereignty_file(sovereignty_file_path: str) -> SovereigntyConfig:
+    payload = json.loads(Path(sovereignty_file_path).read_text(encoding="utf-8"))
+    return SovereigntyConfig.model_validate(payload)
+
+
+@lru_cache(maxsize=8)
+def _cached_sovereignty_engine(sovereignty_file_path: str) -> SovereigntyEngine:
+    return SovereigntyEngine(_load_sovereignty_file(sovereignty_file_path))
+
+
+def build_sovereignty_engine(settings: BridgeSettings) -> SovereigntyEngine:
+    if settings.sovereignty_file_path:
+        return _cached_sovereignty_engine(settings.sovereignty_file_path)
+    return SovereigntyEngine(SovereigntyConfig())
 
 
 def build_replay_fingerprint(operation: str, request: Mapping[str, JSONValue]) -> str:
@@ -2126,6 +2206,60 @@ async def plan_autonomous_optimization_impl(
         return optimization_result
 
 
+async def plan_sovereignty_mode_impl(
+    request: SovereigntyRequest,
+    settings: BridgeSettings,
+) -> dict[str, JSONValue]:
+    request_id = build_request_id(
+        "plan_sovereignty_mode",
+        canonicalize_payload(request.model_dump(mode="json")),
+    )
+
+    with TRACER.start_as_current_span("mcp.plan_sovereignty_mode") as span:
+        span.set_attribute("bridge.request_id", request_id)
+        span.set_attribute("bridge.sovereignty.data_classification", request.data_classification)
+        log_event(
+            "info",
+            "plan_sovereignty_mode.start",
+            request_id=request_id,
+            data_classification=request.data_classification,
+            source_region=request.source_region,
+            target_region=request.target_region,
+            requires_local_processing=request.requires_local_processing,
+        )
+        enforce_policy(
+            settings,
+            tool_name="plan_sovereignty_mode",
+            request_id=request_id,
+            attributes={
+                "data_classification": request.data_classification,
+                "target_region": request.target_region,
+            },
+        )
+
+        sovereignty_result = build_sovereignty_engine(settings).plan(request)
+        sovereignty_result["request_id"] = request_id
+        write_audit_record(
+            settings,
+            operation="plan_sovereignty_mode",
+            request_id=request_id,
+            request=request.model_dump(mode="json"),
+            outcome={
+                "mode": sovereignty_result["mode"],
+                "allowed": sovereignty_result["allowed"],
+                "policy_decision": "allow",
+            },
+        )
+        log_event(
+            "info",
+            "plan_sovereignty_mode.completed",
+            request_id=request_id,
+            mode=sovereignty_result["mode"],
+            allowed=sovereignty_result["allowed"],
+        )
+        return sovereignty_result
+
+
 DEFAULT_CACHE = IdempotencyCache(ttl_seconds=get_settings().idempotency_ttl_seconds)
 
 
@@ -2313,6 +2447,24 @@ async def plan_autonomous_optimization(
         subject_scope=subject_scope,
     )
     return await plan_autonomous_optimization_impl(request, settings)
+
+
+@MCP_SERVER.tool()
+async def plan_sovereignty_mode(
+    data_classification: str,
+    source_region: str,
+    target_region: str,
+    requires_local_processing: bool = False,
+) -> dict[str, JSONValue]:
+    """Plan whether a workload must remain local, remain in-region, or may cross boundaries."""
+    settings = get_settings()
+    request = SovereigntyRequest(
+        data_classification=data_classification,
+        source_region=source_region,
+        target_region=target_region,
+        requires_local_processing=requires_local_processing,
+    )
+    return await plan_sovereignty_mode_impl(request, settings)
 
 
 def main() -> None:

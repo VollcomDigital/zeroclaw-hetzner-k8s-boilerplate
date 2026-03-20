@@ -29,4 +29,4 @@
 - [x] Agent control plane
 - [x] Compliance-native AI platform
 - [x] Autonomous optimization layer
-- [ ] Hybrid local/prod sovereignty mode
+- [x] Hybrid local/prod sovereignty mode

@@ -280,6 +280,7 @@ services:
       BRIDGE_AGENT_CONTROL_PLANE_FILE_PATH: ${BRIDGE_AGENT_CONTROL_PLANE_FILE_PATH:-/etc/n8n-bridge/agent-control-plane.json}
       BRIDGE_COMPLIANCE_PLATFORM_FILE_PATH: ${BRIDGE_COMPLIANCE_PLATFORM_FILE_PATH:-/etc/n8n-bridge/compliance-platform.json}
       BRIDGE_AUTONOMOUS_OPTIMIZATION_FILE_PATH: ${BRIDGE_AUTONOMOUS_OPTIMIZATION_FILE_PATH:-/etc/n8n-bridge/autonomous-optimization.json}
+      BRIDGE_SOVEREIGNTY_FILE_PATH: ${BRIDGE_SOVEREIGNTY_FILE_PATH:-/etc/n8n-bridge/sovereignty.json}
       MCP_HOST: 0.0.0.0
       MCP_PORT: "8000"
       N8N_BASE_URL: http://n8n:5678
@@ -305,6 +306,7 @@ services:
       - ./infrastructure/policy/agent-control-plane.local.json:/etc/n8n-bridge/agent-control-plane.json:ro
       - ./infrastructure/policy/compliance-platform.local.json:/etc/n8n-bridge/compliance-platform.json:ro
       - ./infrastructure/policy/autonomous-optimization.local.json:/etc/n8n-bridge/autonomous-optimization.json:ro
+      - ./infrastructure/policy/sovereignty.local.json:/etc/n8n-bridge/sovereignty.json:ro
     depends_on:
       - n8n
       - 1password-connect-api
