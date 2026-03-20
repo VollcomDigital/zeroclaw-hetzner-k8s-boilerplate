@@ -26,7 +26,7 @@
 
 ## Phase 4: The 1% Visionary Roadmap
 - [x] Full confidential-agent architecture
-- [ ] Agent control plane
+- [x] Agent control plane
 - [ ] Compliance-native AI platform
 - [ ] Autonomous optimization layer
 - [ ] Hybrid local/prod sovereignty mode

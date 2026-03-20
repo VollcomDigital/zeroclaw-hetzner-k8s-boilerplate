@@ -58,6 +58,7 @@ class BridgeSettings(BaseModel):
     rollout_file_path: str | None = None
     failure_mode_file_path: str | None = None
     confidential_execution_file_path: str | None = None
+    agent_control_plane_file_path: str | None = None
     request_timeout_seconds: float = Field(default=15.0, gt=0)
     idempotency_ttl_seconds: float = Field(default=300.0, ge=0)
 
@@ -242,6 +243,41 @@ class ConfidentialExecutionConfig(BaseModel):
     targets: dict[str, ConfidentialExecutionTarget] = Field(default_factory=dict)
 
 
+class AgentQuotaClass(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    max_requests_per_minute: int = Field(ge=1)
+    max_parallel_tasks: int = Field(ge=1)
+
+
+class AgentTenantConfig(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    allowed_capabilities: list[str] = Field(default_factory=list)
+    allowed_policy_packs: list[str] = Field(default_factory=list)
+    default_policy_pack: str
+    default_quota_class: str
+    workspace_prefix: str
+
+
+class AgentControlPlaneConfig(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    version: int = 1
+    quota_classes: dict[str, AgentQuotaClass] = Field(default_factory=dict)
+    tenants: dict[str, AgentTenantConfig] = Field(default_factory=dict)
+
+
+class AgentControlPlaneRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    tenant_id: str = Field(min_length=1)
+    agent_id: str = Field(min_length=1)
+    requested_capabilities: list[str] = Field(default_factory=list)
+    requested_policy_pack: str | None = None
+    requested_quota_class: str | None = None
+
+
 class IdempotencyCache:
     def __init__(self, ttl_seconds: float) -> None:
         self._ttl_seconds = ttl_seconds
@@ -285,6 +321,7 @@ def get_settings() -> BridgeSettings:
         rollout_file_path=os.getenv("BRIDGE_ROLLOUT_FILE_PATH"),
         failure_mode_file_path=os.getenv("BRIDGE_FAILURE_MODE_FILE_PATH"),
         confidential_execution_file_path=os.getenv("BRIDGE_CONFIDENTIAL_EXECUTION_FILE_PATH"),
+        agent_control_plane_file_path=os.getenv("BRIDGE_AGENT_CONTROL_PLANE_FILE_PATH"),
         request_timeout_seconds=float(os.getenv("BRIDGE_REQUEST_TIMEOUT_SECONDS", "15")),
         idempotency_ttl_seconds=float(os.getenv("BRIDGE_IDEMPOTENCY_TTL_SECONDS", "300")),
     )
@@ -885,6 +922,63 @@ def build_confidential_execution_engine(settings: BridgeSettings) -> Confidentia
     if settings.confidential_execution_file_path:
         return _cached_confidential_execution_engine(settings.confidential_execution_file_path)
     return ConfidentialExecutionEngine(ConfidentialExecutionConfig())
+
+
+class AgentControlPlaneEngine:
+    def __init__(self, config: AgentControlPlaneConfig) -> None:
+        self._config = config
+
+    def plan(self, request: AgentControlPlaneRequest) -> dict[str, JSONValue]:
+        tenant = self._config.tenants.get(request.tenant_id)
+        if tenant is None:
+            raise RuntimeError(f"Unknown tenant '{request.tenant_id}'.")
+
+        disallowed_capabilities = [
+            capability for capability in request.requested_capabilities if capability not in tenant.allowed_capabilities
+        ]
+        if disallowed_capabilities:
+            raise RuntimeError(
+                f"Capabilities {disallowed_capabilities} are not permitted for tenant '{request.tenant_id}'."
+            )
+
+        policy_pack = request.requested_policy_pack or tenant.default_policy_pack
+        if policy_pack not in tenant.allowed_policy_packs:
+            raise RuntimeError(f"Policy pack '{policy_pack}' is not permitted for tenant '{request.tenant_id}'.")
+
+        quota_class_name = request.requested_quota_class or tenant.default_quota_class
+        quota_class = self._config.quota_classes.get(quota_class_name)
+        if quota_class is None:
+            raise RuntimeError(f"Unknown quota class '{quota_class_name}'.")
+
+        return {
+            "tenant_id": request.tenant_id,
+            "agent_id": request.agent_id,
+            "policy_pack": policy_pack,
+            "quota_class": quota_class_name,
+            "workspace_id": f"{tenant.workspace_prefix}-{request.agent_id}",
+            "max_requests_per_minute": quota_class.max_requests_per_minute,
+            "max_parallel_tasks": quota_class.max_parallel_tasks,
+            "replay_fingerprint": build_replay_fingerprint(
+                "plan_agent_control_plane",
+                request.model_dump(mode="json"),
+            ),
+        }
+
+
+def _load_agent_control_plane_file(agent_control_plane_file_path: str) -> AgentControlPlaneConfig:
+    payload = json.loads(Path(agent_control_plane_file_path).read_text(encoding="utf-8"))
+    return AgentControlPlaneConfig.model_validate(payload)
+
+
+@lru_cache(maxsize=8)
+def _cached_agent_control_plane_engine(agent_control_plane_file_path: str) -> AgentControlPlaneEngine:
+    return AgentControlPlaneEngine(_load_agent_control_plane_file(agent_control_plane_file_path))
+
+
+def build_agent_control_plane_engine(settings: BridgeSettings) -> AgentControlPlaneEngine:
+    if settings.agent_control_plane_file_path:
+        return _cached_agent_control_plane_engine(settings.agent_control_plane_file_path)
+    return AgentControlPlaneEngine(AgentControlPlaneConfig())
 
 
 def build_replay_fingerprint(operation: str, request: Mapping[str, JSONValue]) -> str:
@@ -1641,6 +1735,64 @@ async def plan_confidential_execution_impl(
         return confidential_result
 
 
+async def plan_agent_control_plane_impl(
+    request: AgentControlPlaneRequest,
+    settings: BridgeSettings,
+) -> dict[str, JSONValue]:
+    request_id = build_request_id(
+        "plan_agent_control_plane",
+        canonicalize_payload(request.model_dump(mode="json")),
+    )
+
+    with TRACER.start_as_current_span("mcp.plan_agent_control_plane") as span:
+        span.set_attribute("bridge.request_id", request_id)
+        span.set_attribute("bridge.agent_control.tenant_id", request.tenant_id)
+        span.set_attribute("bridge.agent_control.agent_id", request.agent_id)
+        log_event(
+            "info",
+            "plan_agent_control_plane.start",
+            request_id=request_id,
+            tenant_id=request.tenant_id,
+            agent_id=request.agent_id,
+            requested_capabilities=request.requested_capabilities,
+        )
+        enforce_policy(
+            settings,
+            tool_name="plan_agent_control_plane",
+            request_id=request_id,
+            attributes={
+                "tenant_id": request.tenant_id,
+                "agent_id": request.agent_id,
+            },
+        )
+
+        control_result = build_agent_control_plane_engine(settings).plan(request)
+        control_result["request_id"] = request_id
+        write_audit_record(
+            settings,
+            operation="plan_agent_control_plane",
+            request_id=request_id,
+            request=request.model_dump(mode="json"),
+            outcome={
+                "policy_pack": control_result["policy_pack"],
+                "quota_class": control_result["quota_class"],
+                "workspace_id": control_result["workspace_id"],
+                "policy_decision": "allow",
+            },
+        )
+        log_event(
+            "info",
+            "plan_agent_control_plane.completed",
+            request_id=request_id,
+            tenant_id=request.tenant_id,
+            agent_id=request.agent_id,
+            policy_pack=control_result["policy_pack"],
+            quota_class=control_result["quota_class"],
+            workspace_id=control_result["workspace_id"],
+        )
+        return control_result
+
+
 DEFAULT_CACHE = IdempotencyCache(ttl_seconds=get_settings().idempotency_ttl_seconds)
 
 
@@ -1770,6 +1922,26 @@ async def plan_confidential_execution(
         preferred_region=preferred_region,
     )
     return await plan_confidential_execution_impl(request, settings)
+
+
+@MCP_SERVER.tool()
+async def plan_agent_control_plane(
+    tenant_id: str,
+    agent_id: str,
+    requested_capabilities: list[str],
+    requested_policy_pack: str | None = None,
+    requested_quota_class: str | None = None,
+) -> dict[str, JSONValue]:
+    """Plan tenant, quota, workspace, and policy-pack assignment for an agent."""
+    settings = get_settings()
+    request = AgentControlPlaneRequest(
+        tenant_id=tenant_id,
+        agent_id=agent_id,
+        requested_capabilities=requested_capabilities,
+        requested_policy_pack=requested_policy_pack,
+        requested_quota_class=requested_quota_class,
+    )
+    return await plan_agent_control_plane_impl(request, settings)
 
 
 def main() -> None:
