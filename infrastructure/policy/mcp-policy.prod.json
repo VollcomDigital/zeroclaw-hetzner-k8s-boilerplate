@@ -2,6 +2,7 @@
   "version": 1,
   "default_action": "deny",
   "tools": {
+    "plan_confidential_execution": {},
     "plan_failure_mode": {},
     "plan_progressive_rollout": {},
     "plan_vector_memory_lifecycle": {},

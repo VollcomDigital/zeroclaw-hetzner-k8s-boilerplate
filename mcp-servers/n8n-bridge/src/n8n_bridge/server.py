@@ -57,6 +57,7 @@ class BridgeSettings(BaseModel):
     vector_memory_policy_file_path: str | None = None
     rollout_file_path: str | None = None
     failure_mode_file_path: str | None = None
+    confidential_execution_file_path: str | None = None
     request_timeout_seconds: float = Field(default=15.0, gt=0)
     idempotency_ttl_seconds: float = Field(default=300.0, ge=0)
 
@@ -208,6 +209,39 @@ class FailureModeConfig(BaseModel):
     rules: dict[str, FailureModeRule] = Field(default_factory=dict)
 
 
+class ConfidentialExecutionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    workload_kind: str = Field(min_length=1)
+    data_classification: str = Field(min_length=1)
+    requires_attestation: bool = False
+    requires_gpu: bool = False
+    requires_workload_identity: bool = False
+    preferred_region: str | None = None
+
+
+class ConfidentialExecutionTarget(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    execution_mode: str
+    provider: str
+    endpoint: str
+    attested: bool = False
+    supports_gpu: bool = False
+    provides_workload_identity: bool = False
+    allowed_data_classifications: list[str] = Field(default_factory=list)
+    regions: list[str] = Field(default_factory=lambda: ["*"])
+    priority: int = Field(default=100, ge=0)
+    healthy: bool = True
+
+
+class ConfidentialExecutionConfig(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    version: int = 1
+    targets: dict[str, ConfidentialExecutionTarget] = Field(default_factory=dict)
+
+
 class IdempotencyCache:
     def __init__(self, ttl_seconds: float) -> None:
         self._ttl_seconds = ttl_seconds
@@ -250,6 +284,7 @@ def get_settings() -> BridgeSettings:
         vector_memory_policy_file_path=os.getenv("BRIDGE_VECTOR_MEMORY_POLICY_FILE_PATH"),
         rollout_file_path=os.getenv("BRIDGE_ROLLOUT_FILE_PATH"),
         failure_mode_file_path=os.getenv("BRIDGE_FAILURE_MODE_FILE_PATH"),
+        confidential_execution_file_path=os.getenv("BRIDGE_CONFIDENTIAL_EXECUTION_FILE_PATH"),
         request_timeout_seconds=float(os.getenv("BRIDGE_REQUEST_TIMEOUT_SECONDS", "15")),
         idempotency_ttl_seconds=float(os.getenv("BRIDGE_IDEMPOTENCY_TTL_SECONDS", "300")),
     )
@@ -775,6 +810,81 @@ def build_failure_mode_engine(settings: BridgeSettings) -> FailureModeEngine:
     if settings.failure_mode_file_path:
         return _cached_failure_mode_engine(settings.failure_mode_file_path)
     return FailureModeEngine(FailureModeConfig())
+
+
+class ConfidentialExecutionEngine:
+    def __init__(self, config: ConfidentialExecutionConfig) -> None:
+        self._config = config
+
+    def plan(self, request: ConfidentialExecutionRequest) -> dict[str, JSONValue]:
+        matching_targets = [
+            (target_name, target)
+            for target_name, target in self._config.targets.items()
+            if self._target_matches(target, request)
+        ]
+        if not matching_targets:
+            raise RuntimeError("No confidential execution target matched the request.")
+
+        selected_name, selected_target = sorted(
+            matching_targets,
+            key=lambda item: (
+                0 if request.requires_gpu == item[1].supports_gpu else 1,
+                0 if (not request.requires_gpu and not item[1].supports_gpu) else 1,
+                item[1].priority,
+                item[0],
+            ),
+        )[0]
+
+        return {
+            "target_name": selected_name,
+            "execution_mode": selected_target.execution_mode,
+            "provider": selected_target.provider,
+            "endpoint": selected_target.endpoint,
+            "attested": selected_target.attested,
+            "supports_gpu": selected_target.supports_gpu,
+            "provides_workload_identity": selected_target.provides_workload_identity,
+            "replay_fingerprint": build_replay_fingerprint(
+                "plan_confidential_execution",
+                request.model_dump(mode="json"),
+            ),
+        }
+
+    @staticmethod
+    def _target_matches(target: ConfidentialExecutionTarget, request: ConfidentialExecutionRequest) -> bool:
+        if not target.healthy:
+            return False
+        if request.requires_attestation and not target.attested:
+            return False
+        if request.requires_gpu and not target.supports_gpu:
+            return False
+        if request.requires_workload_identity and not target.provides_workload_identity:
+            return False
+        if (
+            target.allowed_data_classifications
+            and "*" not in target.allowed_data_classifications
+            and request.data_classification not in target.allowed_data_classifications
+        ):
+            return False
+        if request.preferred_region:
+            if target.regions and "*" not in target.regions and request.preferred_region not in target.regions:
+                return False
+        return True
+
+
+def _load_confidential_execution_file(confidential_execution_file_path: str) -> ConfidentialExecutionConfig:
+    payload = json.loads(Path(confidential_execution_file_path).read_text(encoding="utf-8"))
+    return ConfidentialExecutionConfig.model_validate(payload)
+
+
+@lru_cache(maxsize=8)
+def _cached_confidential_execution_engine(confidential_execution_file_path: str) -> ConfidentialExecutionEngine:
+    return ConfidentialExecutionEngine(_load_confidential_execution_file(confidential_execution_file_path))
+
+
+def build_confidential_execution_engine(settings: BridgeSettings) -> ConfidentialExecutionEngine:
+    if settings.confidential_execution_file_path:
+        return _cached_confidential_execution_engine(settings.confidential_execution_file_path)
+    return ConfidentialExecutionEngine(ConfidentialExecutionConfig())
 
 
 def build_replay_fingerprint(operation: str, request: Mapping[str, JSONValue]) -> str:
@@ -1473,6 +1583,64 @@ async def plan_failure_mode_impl(
         return failure_result
 
 
+async def plan_confidential_execution_impl(
+    request: ConfidentialExecutionRequest,
+    settings: BridgeSettings,
+) -> dict[str, JSONValue]:
+    request_id = build_request_id(
+        "plan_confidential_execution",
+        canonicalize_payload(request.model_dump(mode="json")),
+    )
+
+    with TRACER.start_as_current_span("mcp.plan_confidential_execution") as span:
+        span.set_attribute("bridge.request_id", request_id)
+        span.set_attribute("bridge.confidential.workload_kind", request.workload_kind)
+        span.set_attribute("bridge.confidential.data_classification", request.data_classification)
+        log_event(
+            "info",
+            "plan_confidential_execution.start",
+            request_id=request_id,
+            workload_kind=request.workload_kind,
+            data_classification=request.data_classification,
+            requires_attestation=request.requires_attestation,
+            requires_gpu=request.requires_gpu,
+            requires_workload_identity=request.requires_workload_identity,
+        )
+        enforce_policy(
+            settings,
+            tool_name="plan_confidential_execution",
+            request_id=request_id,
+            attributes={
+                "workload_kind": request.workload_kind,
+                "data_classification": request.data_classification,
+            },
+        )
+
+        confidential_result = build_confidential_execution_engine(settings).plan(request)
+        confidential_result["request_id"] = request_id
+        write_audit_record(
+            settings,
+            operation="plan_confidential_execution",
+            request_id=request_id,
+            request=request.model_dump(mode="json"),
+            outcome={
+                "target_name": confidential_result["target_name"],
+                "execution_mode": confidential_result["execution_mode"],
+                "provider": confidential_result["provider"],
+                "policy_decision": "allow",
+            },
+        )
+        log_event(
+            "info",
+            "plan_confidential_execution.completed",
+            request_id=request_id,
+            target_name=confidential_result["target_name"],
+            execution_mode=confidential_result["execution_mode"],
+            provider=confidential_result["provider"],
+        )
+        return confidential_result
+
+
 DEFAULT_CACHE = IdempotencyCache(ttl_seconds=get_settings().idempotency_ttl_seconds)
 
 
@@ -1580,6 +1748,28 @@ async def plan_failure_mode(
         data_classification=data_classification,
     )
     return await plan_failure_mode_impl(request, settings)
+
+
+@MCP_SERVER.tool()
+async def plan_confidential_execution(
+    workload_kind: str,
+    data_classification: str,
+    requires_attestation: bool,
+    requires_gpu: bool,
+    requires_workload_identity: bool,
+    preferred_region: str | None = None,
+) -> dict[str, JSONValue]:
+    """Plan the safest attested or isolated execution target for sensitive workloads."""
+    settings = get_settings()
+    request = ConfidentialExecutionRequest(
+        workload_kind=workload_kind,
+        data_classification=data_classification,
+        requires_attestation=requires_attestation,
+        requires_gpu=requires_gpu,
+        requires_workload_identity=requires_workload_identity,
+        preferred_region=preferred_region,
+    )
+    return await plan_confidential_execution_impl(request, settings)
 
 
 def main() -> None:

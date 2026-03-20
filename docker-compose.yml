@@ -306,6 +306,7 @@ services:
       BRIDGE_VECTOR_MEMORY_POLICY_FILE_PATH: ${BRIDGE_VECTOR_MEMORY_POLICY_FILE_PATH:-/etc/n8n-bridge/vector-memory-policy.json}
       BRIDGE_ROLLOUT_FILE_PATH: ${BRIDGE_ROLLOUT_FILE_PATH:-/etc/n8n-bridge/rollout.json}
       BRIDGE_FAILURE_MODE_FILE_PATH: ${BRIDGE_FAILURE_MODE_FILE_PATH:-/etc/n8n-bridge/failure-mode.json}
+      BRIDGE_CONFIDENTIAL_EXECUTION_FILE_PATH: ${BRIDGE_CONFIDENTIAL_EXECUTION_FILE_PATH:-/etc/n8n-bridge/confidential-execution.json}
       MCP_HOST: 0.0.0.0
       MCP_PORT: "8000"
       N8N_BASE_URL: http://n8n:5678
@@ -328,6 +329,7 @@ services:
       - ./infrastructure/policy/vector-memory.prod.json:/etc/n8n-bridge/vector-memory-policy.json:ro
       - ./infrastructure/policy/rollout.prod.json:/etc/n8n-bridge/rollout.json:ro
       - ./infrastructure/policy/failure-mode.prod.json:/etc/n8n-bridge/failure-mode.json:ro
+      - ./infrastructure/policy/confidential-execution.prod.json:/etc/n8n-bridge/confidential-execution.json:ro
     networks:
       - app-tier
 

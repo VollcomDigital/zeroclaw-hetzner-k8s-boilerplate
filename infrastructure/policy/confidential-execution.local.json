@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "targets": {
+    "attested_local_gpu": {
+      "execution_mode": "attested-local",
+      "provider": "nvidia-cc",
+      "endpoint": "https://local-attested-gpu.example",
+      "attested": true,
+      "supports_gpu": true,
+      "provides_workload_identity": true,
+      "allowed_data_classifications": ["internal", "restricted"],
+      "regions": ["local", "eu-central"],
+      "priority": 10,
+      "healthy": true
+    },
+    "attested_remote_cpu": {
+      "execution_mode": "attested-remote",
+      "provider": "trusted-tee",
+      "endpoint": "https://attested-remote.example",
+      "attested": true,
+      "supports_gpu": false,
+      "provides_workload_identity": true,
+      "allowed_data_classifications": ["public", "internal", "restricted"],
+      "regions": ["*"],
+      "priority": 20,
+      "healthy": true
+    },
+    "isolated_remote": {
+      "execution_mode": "isolated-remote",
+      "provider": "sandbox",
+      "endpoint": "https://isolated-remote.example",
+      "attested": false,
+      "supports_gpu": false,
+      "provides_workload_identity": false,
+      "allowed_data_classifications": ["public", "internal"],
+      "regions": ["*"],
+      "priority": 50,
+      "healthy": true
+    }
+  }
+}
