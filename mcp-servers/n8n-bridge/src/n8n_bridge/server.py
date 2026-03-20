@@ -59,6 +59,7 @@ class BridgeSettings(BaseModel):
     failure_mode_file_path: str | None = None
     confidential_execution_file_path: str | None = None
     agent_control_plane_file_path: str | None = None
+    compliance_platform_file_path: str | None = None
     request_timeout_seconds: float = Field(default=15.0, gt=0)
     idempotency_ttl_seconds: float = Field(default=300.0, ge=0)
 
@@ -278,6 +279,37 @@ class AgentControlPlaneRequest(BaseModel):
     requested_quota_class: str | None = None
 
 
+class ComplianceCaseRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    regulation: str = Field(min_length=1)
+    case_type: str = Field(min_length=1)
+    subject_id: str = Field(min_length=1)
+    systems_affected: list[str] = Field(default_factory=list)
+    data_classification: str = Field(min_length=1)
+    legal_hold: bool = False
+
+    @field_validator("systems_affected")
+    @classmethod
+    def normalize_systems_affected(cls, value: list[str]) -> list[str]:
+        return sorted(dict.fromkeys(value))
+
+
+class ComplianceRegulationRule(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    erase_targets: list[str] = Field(default_factory=list)
+    evidence_requirements: list[str] = Field(default_factory=list)
+    default_residency: str = "eu"
+
+
+class CompliancePlatformConfig(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    version: int = 1
+    regulations: dict[str, ComplianceRegulationRule] = Field(default_factory=dict)
+
+
 class IdempotencyCache:
     def __init__(self, ttl_seconds: float) -> None:
         self._ttl_seconds = ttl_seconds
@@ -322,6 +354,7 @@ def get_settings() -> BridgeSettings:
         failure_mode_file_path=os.getenv("BRIDGE_FAILURE_MODE_FILE_PATH"),
         confidential_execution_file_path=os.getenv("BRIDGE_CONFIDENTIAL_EXECUTION_FILE_PATH"),
         agent_control_plane_file_path=os.getenv("BRIDGE_AGENT_CONTROL_PLANE_FILE_PATH"),
+        compliance_platform_file_path=os.getenv("BRIDGE_COMPLIANCE_PLATFORM_FILE_PATH"),
         request_timeout_seconds=float(os.getenv("BRIDGE_REQUEST_TIMEOUT_SECONDS", "15")),
         idempotency_ttl_seconds=float(os.getenv("BRIDGE_IDEMPOTENCY_TTL_SECONDS", "300")),
     )
@@ -979,6 +1012,93 @@ def build_agent_control_plane_engine(settings: BridgeSettings) -> AgentControlPl
     if settings.agent_control_plane_file_path:
         return _cached_agent_control_plane_engine(settings.agent_control_plane_file_path)
     return AgentControlPlaneEngine(AgentControlPlaneConfig())
+
+
+class CompliancePlatformEngine:
+    def __init__(self, config: CompliancePlatformConfig) -> None:
+        self._config = config
+
+    def plan(self, request: ComplianceCaseRequest) -> dict[str, JSONValue]:
+        rule = self._config.regulations.get(request.regulation)
+        if rule is None:
+            raise RuntimeError(f"Unknown regulation '{request.regulation}'.")
+
+        if request.case_type == "subject_erasure":
+            if request.legal_hold:
+                return self._serialize_result(
+                    request=request,
+                    action="hold",
+                    erase_targets=[],
+                    evidence_requirements=rule.evidence_requirements,
+                    residency_region=rule.default_residency,
+                    reasons=["legal hold blocks erasure until released"],
+                )
+            erase_targets = sorted(target for target in rule.erase_targets if target in request.systems_affected)
+            return self._serialize_result(
+                request=request,
+                action="erase",
+                erase_targets=erase_targets,
+                evidence_requirements=rule.evidence_requirements,
+                residency_region=rule.default_residency,
+                reasons=["subject erasure request requires propagation across configured systems"],
+            )
+
+        if request.case_type == "audit_evidence":
+            return self._serialize_result(
+                request=request,
+                action="collect_evidence",
+                erase_targets=[],
+                evidence_requirements=sorted(rule.evidence_requirements),
+                residency_region=rule.default_residency,
+                reasons=["audit evidence request requires regulation-specific evidence bundle"],
+            )
+
+        raise RuntimeError(f"Unsupported compliance case type '{request.case_type}'.")
+
+    @staticmethod
+    def _serialize_result(
+        *,
+        request: ComplianceCaseRequest,
+        action: str,
+        erase_targets: list[str],
+        evidence_requirements: list[str],
+        residency_region: str,
+        reasons: list[str],
+    ) -> dict[str, JSONValue]:
+        evidence_bundle_id = hashlib.sha256(
+            f"{request.regulation}:{request.case_type}:{request.subject_id}".encode("utf-8")
+        ).hexdigest()[:24]
+        return {
+            "regulation": request.regulation,
+            "case_type": request.case_type,
+            "subject_id": request.subject_id,
+            "action": action,
+            "erase_targets": erase_targets,
+            "evidence_requirements": sorted(evidence_requirements),
+            "evidence_bundle_id": evidence_bundle_id,
+            "residency_region": residency_region,
+            "reasons": reasons,
+            "replay_fingerprint": build_replay_fingerprint(
+                "plan_compliance_case",
+                request.model_dump(mode="json"),
+            ),
+        }
+
+
+def _load_compliance_platform_file(compliance_platform_file_path: str) -> CompliancePlatformConfig:
+    payload = json.loads(Path(compliance_platform_file_path).read_text(encoding="utf-8"))
+    return CompliancePlatformConfig.model_validate(payload)
+
+
+@lru_cache(maxsize=8)
+def _cached_compliance_platform_engine(compliance_platform_file_path: str) -> CompliancePlatformEngine:
+    return CompliancePlatformEngine(_load_compliance_platform_file(compliance_platform_file_path))
+
+
+def build_compliance_platform_engine(settings: BridgeSettings) -> CompliancePlatformEngine:
+    if settings.compliance_platform_file_path:
+        return _cached_compliance_platform_engine(settings.compliance_platform_file_path)
+    return CompliancePlatformEngine(CompliancePlatformConfig())
 
 
 def build_replay_fingerprint(operation: str, request: Mapping[str, JSONValue]) -> str:
@@ -1793,6 +1913,64 @@ async def plan_agent_control_plane_impl(
         return control_result
 
 
+async def plan_compliance_case_impl(
+    request: ComplianceCaseRequest,
+    settings: BridgeSettings,
+) -> dict[str, JSONValue]:
+    request_id = build_request_id(
+        "plan_compliance_case",
+        canonicalize_payload(request.model_dump(mode="json")),
+    )
+
+    with TRACER.start_as_current_span("mcp.plan_compliance_case") as span:
+        span.set_attribute("bridge.request_id", request_id)
+        span.set_attribute("bridge.compliance.regulation", request.regulation)
+        span.set_attribute("bridge.compliance.case_type", request.case_type)
+        log_event(
+            "info",
+            "plan_compliance_case.start",
+            request_id=request_id,
+            regulation=request.regulation,
+            case_type=request.case_type,
+            subject_id=request.subject_id,
+            systems_affected=request.systems_affected,
+        )
+        enforce_policy(
+            settings,
+            tool_name="plan_compliance_case",
+            request_id=request_id,
+            attributes={
+                "regulation": request.regulation,
+                "case_type": request.case_type,
+            },
+        )
+
+        compliance_result = build_compliance_platform_engine(settings).plan(request)
+        compliance_result["request_id"] = request_id
+        write_audit_record(
+            settings,
+            operation="plan_compliance_case",
+            request_id=request_id,
+            request=request.model_dump(mode="json"),
+            outcome={
+                "action": compliance_result["action"],
+                "evidence_bundle_id": compliance_result["evidence_bundle_id"],
+                "residency_region": compliance_result["residency_region"],
+                "policy_decision": "allow",
+            },
+        )
+        log_event(
+            "info",
+            "plan_compliance_case.completed",
+            request_id=request_id,
+            regulation=request.regulation,
+            case_type=request.case_type,
+            action=compliance_result["action"],
+            evidence_bundle_id=compliance_result["evidence_bundle_id"],
+        )
+        return compliance_result
+
+
 DEFAULT_CACHE = IdempotencyCache(ttl_seconds=get_settings().idempotency_ttl_seconds)
 
 
@@ -1942,6 +2120,28 @@ async def plan_agent_control_plane(
         requested_quota_class=requested_quota_class,
     )
     return await plan_agent_control_plane_impl(request, settings)
+
+
+@MCP_SERVER.tool()
+async def plan_compliance_case(
+    regulation: str,
+    case_type: str,
+    subject_id: str,
+    systems_affected: list[str],
+    data_classification: str,
+    legal_hold: bool = False,
+) -> dict[str, JSONValue]:
+    """Plan regulation-specific erase, evidence, and residency actions for an AI compliance case."""
+    settings = get_settings()
+    request = ComplianceCaseRequest(
+        regulation=regulation,
+        case_type=case_type,
+        subject_id=subject_id,
+        systems_affected=systems_affected,
+        data_classification=data_classification,
+        legal_hold=legal_hold,
+    )
+    return await plan_compliance_case_impl(request, settings)
 
 
 def main() -> None:

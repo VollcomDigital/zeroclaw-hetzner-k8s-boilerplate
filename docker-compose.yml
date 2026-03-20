@@ -308,6 +308,7 @@ services:
       BRIDGE_FAILURE_MODE_FILE_PATH: ${BRIDGE_FAILURE_MODE_FILE_PATH:-/etc/n8n-bridge/failure-mode.json}
       BRIDGE_CONFIDENTIAL_EXECUTION_FILE_PATH: ${BRIDGE_CONFIDENTIAL_EXECUTION_FILE_PATH:-/etc/n8n-bridge/confidential-execution.json}
       BRIDGE_AGENT_CONTROL_PLANE_FILE_PATH: ${BRIDGE_AGENT_CONTROL_PLANE_FILE_PATH:-/etc/n8n-bridge/agent-control-plane.json}
+      BRIDGE_COMPLIANCE_PLATFORM_FILE_PATH: ${BRIDGE_COMPLIANCE_PLATFORM_FILE_PATH:-/etc/n8n-bridge/compliance-platform.json}
       MCP_HOST: 0.0.0.0
       MCP_PORT: "8000"
       N8N_BASE_URL: http://n8n:5678
@@ -332,6 +333,7 @@ services:
       - ./infrastructure/policy/failure-mode.prod.json:/etc/n8n-bridge/failure-mode.json:ro
       - ./infrastructure/policy/confidential-execution.prod.json:/etc/n8n-bridge/confidential-execution.json:ro
       - ./infrastructure/policy/agent-control-plane.prod.json:/etc/n8n-bridge/agent-control-plane.json:ro
+      - ./infrastructure/policy/compliance-platform.prod.json:/etc/n8n-bridge/compliance-platform.json:ro
     networks:
       - app-tier
 
