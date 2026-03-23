@@ -44,7 +44,14 @@ def base_rollout_config() -> dict[str, object]:
                 "active_prompt_version": "v2",
                 "canary_prompt_version": "v3",
                 "canary_percentage": 10
-            }
+            },
+            "prompt-shadow": {
+                "mode": "shadow",
+                "active_prompt_version": "v1",
+                "canary_prompt_version": "v2-shadow",
+                "primary_webhook_id": "should-not-win-for-prompt",
+                "shadow_webhook_id": "should-not-win-for-prompt",
+            },
         }
     }
 
@@ -65,6 +72,24 @@ def test_rollout_engine_shadow_mode_routes_to_shadow_and_primary(tmp_path: Path)
     assert result["mode"] == "shadow"
     assert result["target"] == "workflow-primary"
     assert result["shadow_target"] == "workflow-shadow"
+
+
+def test_rollout_engine_shadow_mode_prompt_kind_uses_prompt_fields_not_webhooks(tmp_path: Path) -> None:
+    settings = BridgeSettings(
+        progressive_rollout_config_path=write_rollout_config(tmp_path / "rollout.json", base_rollout_config())
+    )
+    engine = build_progressive_rollout_engine(settings)
+    request = ProgressiveRolloutRequest(
+        rollout_kind="prompt",
+        rollout_key="prompt-shadow",
+        subject_id="tenant-b",
+    )
+
+    result = engine.plan(request)
+
+    assert result["mode"] == "shadow"
+    assert result["target"] == "v1"
+    assert result["shadow_target"] == "v2-shadow"
 
 
 def test_rollout_engine_canary_is_deterministic_for_subject(tmp_path: Path) -> None:

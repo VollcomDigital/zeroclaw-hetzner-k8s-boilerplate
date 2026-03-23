@@ -266,6 +266,8 @@ services:
               capabilities:
                 - gpu
     networks:
+      # egress-tier first: non-internal default route for HuggingFace pulls; ai-tier stays for mesh to OpenClaw, etc.
+      - egress-tier
       - ai-tier
 
   ollama:
@@ -286,6 +288,7 @@ services:
     volumes:
       - ollama-data:/root/.ollama
     networks:
+      - egress-tier
       - ai-tier
 
   1password-connect-api:
@@ -494,3 +497,7 @@ networks:
   ai-tier:
     name: hybrid_local_ai_tier
     internal: true
+  # Non-internal: default route for HuggingFace / Ollama registry when paired with internal ai-tier on vllm/ollama.
+  egress-tier:
+    name: hybrid_local_egress_tier
+    internal: false

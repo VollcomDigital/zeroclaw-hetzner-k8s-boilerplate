@@ -821,8 +821,12 @@ class ProgressiveRolloutEngine:
         mode = entry.mode.lower()
 
         if mode == "shadow":
-            target = entry.primary_webhook_id or entry.active_prompt_version
-            shadow_target = entry.shadow_webhook_id or entry.canary_prompt_version
+            if request.rollout_kind == "workflow":
+                target = entry.primary_webhook_id
+                shadow_target = entry.shadow_webhook_id
+            else:
+                target = entry.active_prompt_version
+                shadow_target = entry.canary_prompt_version
             return self._serialize_result(
                 request=request,
                 mode=mode,
