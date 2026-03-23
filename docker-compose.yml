@@ -93,7 +93,7 @@ services:
     labels:
       - traefik.enable=true
       - traefik.docker.network=hybrid_proxy_tier
-      - traefik.http.routers.sso.rule=Host(`${SSO_HOST}`)
+      - 'traefik.http.routers.sso.rule=Host(`${SSO_HOST}`)'
       - traefik.http.routers.sso.entrypoints=websecure
       - traefik.http.routers.sso.tls.certresolver=letsencrypt
       - traefik.http.services.sso.loadbalancer.server.port=4180
@@ -125,15 +125,43 @@ services:
     labels:
       - traefik.enable=true
       - traefik.docker.network=hybrid_proxy_tier
-      - traefik.http.routers.openwork.rule=Host(`${OPENWORK_HOST}`)
+      - 'traefik.http.routers.openwork.rule=Host(`${OPENWORK_HOST}`)'
       - traefik.http.routers.openwork.entrypoints=websecure
       - traefik.http.routers.openwork.tls.certresolver=letsencrypt
       - traefik.http.routers.openwork.middlewares=entra-errors@docker,entra-auth@docker,security-headers@file
       - traefik.http.services.openwork.loadbalancer.server.port=${OPENWORK_PORT:-3000}
 
+  # coollabsio/openclaw nginx proxies /browser/ → http://browser:3000/ (see image /app/scripts/entrypoint.sh).
+  browser:
+    <<: *runtime_defaults
+    image: python:3.12-alpine
+    command:
+      - python
+      - -m
+      - http.server
+      - "3000"
+      - --bind
+      - "0.0.0.0"
+      - --directory
+      - /tmp
+    expose:
+      - "3000"
+    networks:
+      - app-tier
+      - ai-tier
+
   openclaw:
     <<: *runtime_defaults
+    # Anchor has read_only: true; image entrypoint mutates paths under /home/linuxbrew on the root FS (no volume).
+    read_only: false
+    # Image entrypoint mutates root-owned paths under /home/linuxbrew; APP_UID 1000 breaks cleanup.
+    user: "0:0"
+    cap_add:
+      - DAC_OVERRIDE
+      - FOWNER
+      - CHOWN
     image: ${OPENCLAW_IMAGE}
+    entrypoint: ["/bin/sh", "/etc/openclaw/entrypoint-docker.sh"]
     environment:
       MCP_N8N_URL: http://mcp-server-n8n:8000/mcp
       NEMOCLAW_BASE_URL: http://nemoclaw:8080
@@ -148,11 +176,13 @@ services:
     expose:
       - "${OPENCLAW_PORT:-18789}"
     depends_on:
+      - browser
       - vllm
       - nemoclaw
       - mcp-server-n8n
       - qdrant
     volumes:
+      - ./infrastructure/openclaw/entrypoint-docker.sh:/etc/openclaw/entrypoint-docker.sh:ro
       - openclaw-data:/data
     networks:
       - app-tier
@@ -161,6 +191,8 @@ services:
   nemoclaw:
     <<: *runtime_defaults
     image: ${NEMOCLAW_IMAGE}
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["while true; do sleep 86400; done"]
     environment:
       OPENSHELL_SANDBOX_ROOT: /sandbox
       OTEL_SERVICE_NAME: nemoclaw
@@ -178,6 +210,7 @@ services:
 
   vllm:
     <<: *runtime_defaults
+    user: "0:0"
     image: ${VLLM_IMAGE}
     command:
       - --host
@@ -189,7 +222,7 @@ services:
       - --max-model-len
       - ${VLLM_MAX_MODEL_LEN:-8192}
     environment:
-      HF_HOME: /home/app/.cache/huggingface
+      HF_HOME: /root/.cache/huggingface
       HUGGING_FACE_HUB_TOKEN: ${HUGGING_FACE_HUB_TOKEN:-}
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://alloy:4318}
       OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
@@ -200,7 +233,7 @@ services:
       - "8000"
     shm_size: "8gb"
     volumes:
-      - vllm-cache:/home/app/.cache/huggingface
+      - vllm-cache:/root/.cache/huggingface
     deploy:
       resources:
         reservations:
@@ -246,6 +279,15 @@ services:
 
   postgres:
     <<: *runtime_defaults
+    # Override anchor: postgres:16-alpine entrypoint expects root (gosu → postgres UID 70); UID 1000 breaks initdb on the volume.
+    user: "0:0"
+    # Anchor uses cap_drop: ALL; entrypoint needs chown/chmod/setuid for PGDATA + gosu.
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+      - SETGID
+      - SETUID
     image: postgres:16-alpine
     tmpfs:
       - /tmp:rw,noexec,nosuid,size=256m
@@ -294,7 +336,7 @@ services:
     labels:
       - traefik.enable=true
       - traefik.docker.network=hybrid_proxy_tier
-      - traefik.http.routers.n8n.rule=Host(`${N8N_HOST}`)
+      - 'traefik.http.routers.n8n.rule=Host(`${N8N_HOST}`)'
       - traefik.http.routers.n8n.entrypoints=websecure
       - traefik.http.routers.n8n.tls.certresolver=letsencrypt
       - traefik.http.routers.n8n.middlewares=entra-errors@docker,entra-auth@docker,security-headers@file

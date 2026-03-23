@@ -1783,6 +1783,8 @@ async def select_model_route_impl(
             data_classification=request.data_classification,
             require_local=request.require_local,
             preferred_region=request.preferred_region,
+            estimated_total_tokens=request.estimated_total_tokens,
+            max_cost_usd=request.max_cost_usd,
         )
         enforce_policy(
             settings,
@@ -2310,8 +2312,10 @@ async def select_model_route(
     max_latency_ms: int,
     require_local: bool = False,
     preferred_region: str | None = None,
+    estimated_total_tokens: int = 0,
+    max_cost_usd: float | None = None,
 ) -> dict[str, JSONValue]:
-    """Select the most appropriate model route based on sensitivity, locality, and latency budget."""
+    """Select the most appropriate model route based on sensitivity, locality, latency, and cost bounds."""
     settings = get_settings()
     request = ModelRoutingRequest(
         workload_kind=workload_kind,
@@ -2319,6 +2323,8 @@ async def select_model_route(
         max_latency_ms=max_latency_ms,
         require_local=require_local,
         preferred_region=preferred_region,
+        estimated_total_tokens=estimated_total_tokens,
+        max_cost_usd=max_cost_usd,
     )
     return await select_model_route_impl(request, settings)
 

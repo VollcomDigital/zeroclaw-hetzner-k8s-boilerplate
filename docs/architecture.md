@@ -32,6 +32,7 @@ The ZeroClaw assistant reference stack runs on Kubernetes behind a Cloudflare Tu
 | Identity gate | `sso` | oauth2-proxy + Entra integration (production compose path) |
 | Frontend shell | `openwork` | OpenWork mount point |
 | Agent runtime | `openclaw` | OpenClaw mount point |
+| Browser sidecar stub | `browser` | Minimal HTTP on port 3000 — `coollabsio/openclaw` nginx proxies `/browser/` here; replace with a real browser/VNC sidecar when needed |
 | Sandbox | `nemoclaw` | NemoClaw mount point |
 | Inference | `vllm` | Production GPU inference (immutable image contract in compose) |
 | Workflows | `n8n` | Automation engine and webhooks |

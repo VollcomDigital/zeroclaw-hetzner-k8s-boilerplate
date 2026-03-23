@@ -21,11 +21,15 @@ ensure-prod-env:
 dev-mac: ensure-local-env
 	@LOCAL_LLM_BASE_URL=http://ollama:11434 \
 	LOCAL_LLM_MODEL="$$(awk -F= '/^OLLAMA_MODEL=/{print $$2}' $(LOCAL_ENV))" \
+	OLLAMA_BASE_URL=http://ollama:11434 \
+	OPENCLAW_PRIMARY_MODEL="ollama/$$(awk -F= '/^OLLAMA_MODEL=/{print $$2}' $(LOCAL_ENV))" \
 	$(COMPOSE) --env-file $(LOCAL_ENV) -f $(LOCAL_COMPOSE) --profile mac up -d --build
 
 dev-windows: ensure-local-env
 	@LOCAL_LLM_BASE_URL=http://vllm:8000/v1 \
 	LOCAL_LLM_MODEL="$$(awk -F= '/^VLLM_MODEL=/{print $$2}' $(LOCAL_ENV))" \
+	OLLAMA_BASE_URL=http://vllm:8000 \
+	OPENCLAW_PRIMARY_MODEL="ollama/$$(awk -F= '/^VLLM_MODEL=/{print $$2}' $(LOCAL_ENV))" \
 	$(COMPOSE) --env-file $(LOCAL_ENV) -f $(LOCAL_COMPOSE) --profile windows up -d --build
 
 # GPU-free smoke stack (Traefik, Alloy, Postgres, n8n, MCP bridge, Qdrant, 1Password Connect). Not the default dev path.
@@ -45,11 +49,15 @@ down-prod: ensure-prod-env
 validate-local-mac: ensure-local-env
 	@LOCAL_LLM_BASE_URL=http://ollama:11434 \
 	LOCAL_LLM_MODEL="$$(awk -F= '/^OLLAMA_MODEL=/{print $$2}' $(LOCAL_ENV))" \
+	OLLAMA_BASE_URL=http://ollama:11434 \
+	OPENCLAW_PRIMARY_MODEL="ollama/$$(awk -F= '/^OLLAMA_MODEL=/{print $$2}' $(LOCAL_ENV))" \
 	$(COMPOSE) --env-file $(LOCAL_ENV) -f $(LOCAL_COMPOSE) --profile mac config >/dev/null
 
 validate-local-windows: ensure-local-env
 	@LOCAL_LLM_BASE_URL=http://vllm:8000/v1 \
 	LOCAL_LLM_MODEL="$$(awk -F= '/^VLLM_MODEL=/{print $$2}' $(LOCAL_ENV))" \
+	OLLAMA_BASE_URL=http://vllm:8000 \
+	OPENCLAW_PRIMARY_MODEL="ollama/$$(awk -F= '/^VLLM_MODEL=/{print $$2}' $(LOCAL_ENV))" \
 	$(COMPOSE) --env-file $(LOCAL_ENV) -f $(LOCAL_COMPOSE) --profile windows config >/dev/null
 
 validate-local-core: ensure-local-env

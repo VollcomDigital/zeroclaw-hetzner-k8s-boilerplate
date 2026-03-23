@@ -53,12 +53,16 @@ if ($Profile -eq 'mac') {
     if ([string]::IsNullOrWhiteSpace($model)) { $model = 'qwen2.5-coder:7b' }
     $env:LOCAL_LLM_BASE_URL = 'http://ollama:11434'
     $env:LOCAL_LLM_MODEL = $model
+    $env:OLLAMA_BASE_URL = 'http://ollama:11434'
+    $env:OPENCLAW_PRIMARY_MODEL = "ollama/$model"
 }
 elseif ($Profile -eq 'windows') {
     $model = Get-DotEnvValue 'VLLM_MODEL'
     if ([string]::IsNullOrWhiteSpace($model)) { $model = 'Qwen/Qwen2.5-Coder-7B-Instruct' }
     $env:LOCAL_LLM_BASE_URL = 'http://vllm:8000/v1'
     $env:LOCAL_LLM_MODEL = $model
+    $env:OLLAMA_BASE_URL = 'http://vllm:8000'
+    $env:OPENCLAW_PRIMARY_MODEL = "ollama/$model"
 }
 
 $profileFlag = switch ($Profile) {

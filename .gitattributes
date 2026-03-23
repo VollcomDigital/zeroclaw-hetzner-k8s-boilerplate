@@ -1,0 +1,2 @@
+# Shell scripts must use LF so bind-mounts into Linux containers do not break (set -eu → Illegal option).
+*.sh text eol=lf

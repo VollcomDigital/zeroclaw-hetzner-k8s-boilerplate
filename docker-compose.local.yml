@@ -70,6 +70,28 @@ services:
       - proxy-tier
       - app-tier
 
+  # coollabsio/openclaw nginx proxies /browser/ → http://browser:3000/ (see /app/scripts/entrypoint.sh). Stub until a real browser sidecar image is wired.
+  browser:
+    <<: *local_runtime
+    profiles:
+      - windows
+      - mac
+    image: python:3.12-alpine
+    command:
+      - python
+      - -m
+      - http.server
+      - "3000"
+      - --bind
+      - "0.0.0.0"
+      - --directory
+      - /tmp
+    expose:
+      - "3000"
+    networks:
+      - app-tier
+      - ai-tier
+
   openwork:
     <<: *local_runtime
     profiles:
@@ -105,18 +127,37 @@ services:
     labels:
       - traefik.enable=true
       - traefik.docker.network=hybrid_local_proxy_tier
-      - traefik.http.routers.openwork.rule=Host(`${OPENWORK_HOST:-openwork.localhost}`)
+      - 'traefik.http.routers.openwork.rule=Host(`${OPENWORK_HOST:-openwork.localhost}`)'
       - traefik.http.routers.openwork.entrypoints=web
       - traefik.http.routers.openwork.middlewares=local-security-headers@file
       - traefik.http.services.openwork.loadbalancer.server.port=${OPENWORK_PORT:-3000}
 
   openclaw:
     <<: *local_runtime
+    # Image entrypoint mutates root-owned paths under /home/linuxbrew; APP_UID 1000 breaks cleanup.
+    user: "0:0"
+    # Anchor cap_drop: ALL blocks unlink/chown in entrypoint even as UID 0.
+    cap_add:
+      - DAC_OVERRIDE
+      - FOWNER
+      - CHOWN
     profiles:
       - windows
       - mac
     image: ${OPENCLAW_IMAGE:-coollabsio/openclaw:latest}
+    entrypoint: ["/bin/sh", "/etc/openclaw/entrypoint-docker.sh"]
     environment:
+      # coollabsio/openclaw configure.js: local LLM via OpenAI-compatible base (adds /v1). Not LOCAL_LLM_*.
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://vllm:8000}
+      OPENCLAW_PRIMARY_MODEL: ${OPENCLAW_PRIMARY_MODEL:-ollama/Qwen/Qwen2.5-Coder-7B-Instruct}
+      # Control UI + WS: https://docs.openclaw.ai/web/control-ui — LAN bind so Traefik reaches gateway
+      OPENCLAW_GATEWAY_PORT: ${OPENCLAW_PORT:-18789}
+      OPENCLAW_GATEWAY_BIND: ${OPENCLAW_GATEWAY_BIND:-lan}
+      OPENCLAW_CUSTOM_CONFIG: /app/config/openclaw.json
+      AUTH_USERNAME: ${AUTH_USERNAME:-admin}
+      # Empty = no nginx basic auth (recommended locally). Set AUTH_PASSWORD in .env.local to enable it.
+      AUTH_PASSWORD: ${AUTH_PASSWORD:-}
+      OPENCLAW_GATEWAY_TOKEN: ${OPENCLAW_GATEWAY_TOKEN:-dev-openclaw-gateway-token}
       LOCAL_LLM_BASE_URL: ${LOCAL_LLM_BASE_URL:-http://vllm:8000/v1}
       LOCAL_LLM_MODEL: ${LOCAL_LLM_MODEL:-Qwen/Qwen2.5-Coder-7B-Instruct}
       MCP_N8N_URL: http://mcp-server-n8n:8000/mcp
@@ -128,18 +169,39 @@ services:
       OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
       OTEL_PROPAGATORS: tracecontext,baggage
       TZ: ${TZ:-UTC}
+      # Nginx edge port (image entrypoint); keeps image HEALTHCHECK and Traefik backend aligned.
+      PORT: "8080"
     expose:
+      - "8080"
       - "${OPENCLAW_PORT:-18789}"
+    ports:
+      - "127.0.0.1:${OPENCLAW_PORT:-18789}:${OPENCLAW_PORT:-18789}"
+    # Image HEALTHCHECK hits :8080/healthz; first boot can exceed it → "unhealthy". Traefik v3 excludes
+    # unhealthy containers from the Docker provider, so no Host() router and you get 404 on :80.
+    healthcheck:
+      disable: true
     depends_on:
+      - browser
       - nemoclaw
       - mcp-server-n8n
       - qdrant
     volumes:
+      - ./infrastructure/openclaw/entrypoint-docker.sh:/etc/openclaw/entrypoint-docker.sh:ro
+      - ./infrastructure/openclaw/gateway.local.json:/app/config/openclaw.json:ro
       - ./backend/openclaw:/workspace/backend/openclaw:rw
       - openclaw-data:/data
     networks:
+      - proxy-tier
       - app-tier
       - ai-tier
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=hybrid_local_proxy_tier
+      - 'traefik.http.routers.openclaw.rule=Host(`${OPENCLAW_HOST:-openclaw.localhost}`)'
+      - traefik.http.routers.openclaw.entrypoints=web
+      - traefik.http.routers.openclaw.middlewares=local-security-headers@file
+      - traefik.http.services.openclaw.loadbalancer.passHostHeader=true
+      - traefik.http.services.openclaw.loadbalancer.server.port=8080
 
   nemoclaw:
     <<: *local_runtime
@@ -147,6 +209,9 @@ services:
       - windows
       - mac
     image: ${NEMOCLAW_IMAGE:-ghcr.io/nvidia/openshell-community/sandboxes/openclaw:latest}
+    # Default CMD exits immediately; keep container up (shell loop avoids bad-arch /usr/bin/sleep on some setups).
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["while true; do sleep 86400; done"]
     environment:
       OPENSHELL_SANDBOX_ROOT: /sandbox
       OTEL_SERVICE_NAME: nemoclaw
@@ -165,6 +230,8 @@ services:
 
   vllm:
     <<: *local_runtime
+    # Anchor UID 1000 has no /etc/passwd entry in this image; PyTorch getuser() crashes. Run as root + match HF_HOME.
+    user: "0:0"
     profiles:
       - windows
     image: ${VLLM_IMAGE:-vllm/vllm-openai:latest}
@@ -178,7 +245,7 @@ services:
       - --max-model-len
       - ${VLLM_MAX_MODEL_LEN:-8192}
     environment:
-      HF_HOME: /home/app/.cache/huggingface
+      HF_HOME: /root/.cache/huggingface
       HUGGING_FACE_HUB_TOKEN: ${HUGGING_FACE_HUB_TOKEN:-}
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://alloy:4318}
       OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
@@ -189,7 +256,7 @@ services:
       - "8000"
     shm_size: "8gb"
     volumes:
-      - vllm-cache:/home/app/.cache/huggingface
+      - vllm-cache:/root/.cache/huggingface
     deploy:
       resources:
         reservations:
@@ -263,6 +330,15 @@ services:
 
   postgres:
     <<: *local_runtime
+    # Override anchor: postgres:16-alpine entrypoint expects root (gosu → postgres UID 70); UID 1000 breaks initdb on the volume.
+    user: "0:0"
+    # Anchor uses cap_drop: ALL; entrypoint needs chown/chmod/setuid for PGDATA + gosu.
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+      - SETGID
+      - SETUID
     profiles:
       - core
       - windows
@@ -318,7 +394,7 @@ services:
     labels:
       - traefik.enable=true
       - traefik.docker.network=hybrid_local_proxy_tier
-      - traefik.http.routers.n8n.rule=Host(`${N8N_HOST:-n8n.localhost}`)
+      - 'traefik.http.routers.n8n.rule=Host(`${N8N_HOST:-n8n.localhost}`)'
       - traefik.http.routers.n8n.entrypoints=web
       - traefik.http.routers.n8n.middlewares=local-security-headers@file
       - traefik.http.services.n8n.loadbalancer.server.port=5678

@@ -132,7 +132,7 @@ For a **GPU-free** local slice (infra + n8n + MCP bridge only, no agents), use `
 
 On **Windows** without Git Bash, run `pwsh -File .\scripts\local-dev.ps1` from the repo root (same defaults as `make dev-windows`). Use `-Profile core` for the GPU-free stack, `-Profile mac` for Apple Silicon parity, or `-Profile down` to stop. VS Code: tasks **Compose: local up (Windows full)** / **core** / **down**.
 
-**Traefik** is pinned to a Docker 29-compatible release in this repo. If you still test `http://localhost/` directly and see `404`, that is expected: the local routers match hostnames such as `n8n.localhost` and `openwork.localhost`, not bare `localhost`.
+**Traefik** is pinned to a Docker 29-compatible release in this repo. If you still test `http://localhost/` directly and see `404`, that is expected: the local routers match hostnames such as `openclaw.localhost`, `n8n.localhost`, and `openwork.localhost`, not bare `localhost`. **OpenClaw** serves the [Control UI](https://docs.openclaw.ai/web/control-ui) through the image **nginx** on **8080**; Traefik targets that for `http://openclaw.localhost/`. The **gateway** still listens on **18789** (published at `http://127.0.0.1:18789/`). If the UI shows **gateway token missing / unauthorized**, paste the same value as `OPENCLAW_GATEWAY_TOKEN` from `.env.local` into **Control UI → Settings**, or open once with the token in the query string, e.g. `http://openclaw.localhost/?token=<OPENCLAW_GATEWAY_TOKEN>` (and the same pattern on `http://127.0.0.1:18789/` if you use the direct gateway port). **Pairing required** (WebSocket `1008`): OpenClaw [auto-approves only loopback](https://docs.openclaw.ai/web/control-ui#device-pairing-first-connection); this repo’s `infrastructure/openclaw/gateway.local.json` sets `dangerouslyDisableDeviceAuth` for local Docker so `openclaw.localhost` works without `openclaw devices approve`. Prefer `http://127.0.0.1:18789/` if you want the stock behavior without that flag.
 
 **n8n** is also bound to **http://127.0.0.1:5678** on the host (in addition to Traefik + `N8N_HOST`) so you can still open the UI if Docker Desktop regresses the Docker provider again in a future update.
 
@@ -191,5 +191,4 @@ Operational reference for MCP tools, policy bundles, and bridge environment vari
 
 ## License
 
-This repository is currently **UNLICENSED** unless and until the owner publishes
-an explicit license grant in `LICENSE`.
+[MIT](LICENSE).

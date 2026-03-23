@@ -8,7 +8,7 @@ The `mcp-servers/n8n-bridge` service exposes MCP tools that integrate **n8n webh
 |------|------|
 | `trigger_n8n_workflow` | POST to an allowed n8n webhook with idempotency and audit metadata. |
 | `get_1password_secret` | Read secret inventory or a specific field via 1Password Connect. |
-| `select_model_route` | Choose a model route from the routing config under data-classification and latency constraints. |
+| `select_model_route` | Choose a model route from the routing config under data-classification, latency, and optional `estimated_total_tokens` / `max_cost_usd` governance. |
 | `plan_vector_memory_lifecycle` | Plan retention / expiry actions for vector memory segments from policy. |
 | `plan_progressive_rollout` | Plan progressive rollout (workflows / prompts) from rollout config. |
 | `plan_failure_mode` | Plan deterministic failure reactions (retry, degrade, halt, etc.). |

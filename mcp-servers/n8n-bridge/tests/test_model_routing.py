@@ -10,6 +10,8 @@ from n8n_bridge.server import (
     ModelRoutingRequest,
     build_model_router,
     build_replay_fingerprint,
+    get_settings,
+    select_model_route,
 )
 
 
@@ -317,3 +319,65 @@ def test_model_router_skips_route_when_projected_cost_exceeds_budget(tmp_path: P
 
     assert result["route_name"] == "fallback_route"
     assert result["projected_cost_usd"] == pytest.approx(0.01)
+
+
+@pytest.mark.asyncio
+async def test_select_model_route_mcp_tool_passes_cost_fields_to_router(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """MCP `select_model_route` must forward estimated_total_tokens and max_cost_usd for governance."""
+    routing_path = write_routing_config(
+        tmp_path / "routing.json",
+        {
+            "version": 1,
+            "default_route": "budget_route",
+            "routes": {
+                "budget_route": {
+                    "base_url": "https://cheap-llm.example.com/v1",
+                    "model": "cheap-model",
+                    "provider": "remote",
+                    "capabilities": ["chat"],
+                    "allowed_data_classifications": ["public"],
+                    "regions": ["*"],
+                    "max_latency_ms": 2500,
+                    "priority": 10,
+                    "requires_local": False,
+                    "healthy": True,
+                    "estimated_cost_per_1k_tokens_usd": 0.20,
+                    "daily_budget_usd": 10.0,
+                    "current_spend_usd": 9.95,
+                },
+                "fallback_route": {
+                    "base_url": "https://fallback-llm.example.com/v1",
+                    "model": "fallback-model",
+                    "provider": "remote",
+                    "capabilities": ["chat"],
+                    "allowed_data_classifications": ["public"],
+                    "regions": ["*"],
+                    "max_latency_ms": 3500,
+                    "priority": 50,
+                    "requires_local": False,
+                    "healthy": True,
+                    "estimated_cost_per_1k_tokens_usd": 0.02,
+                },
+            },
+        },
+    )
+    monkeypatch.setenv("BRIDGE_MODEL_ROUTING_CONFIG_PATH", routing_path)
+    monkeypatch.setenv("BRIDGE_AUDIT_LEDGER_PATH", str(tmp_path / "audit.jsonl"))
+    get_settings.cache_clear()
+
+    result = await select_model_route(
+        workload_kind="chat",
+        data_classification="public",
+        max_latency_ms=4000,
+        require_local=False,
+        preferred_region="eu-central",
+        estimated_total_tokens=500,
+        max_cost_usd=0.10,
+    )
+
+    assert result["route_name"] == "fallback_route"
+    assert result["projected_cost_usd"] == pytest.approx(0.01)
+    get_settings.cache_clear()
