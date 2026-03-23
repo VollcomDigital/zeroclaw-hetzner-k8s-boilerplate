@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "quota_classes": {
+    "standard": {
+      "max_requests_per_minute": 60,
+      "max_parallel_tasks": 2
+    },
+    "elevated": {
+      "max_requests_per_minute": 240,
+      "max_parallel_tasks": 8
+    }
+  },
+  "tenants": {
+    "tenant-a": {
+      "allowed_capabilities": ["chat", "code", "memory"],
+      "allowed_policy_packs": ["baseline", "strict"],
+      "default_policy_pack": "baseline",
+      "default_quota_class": "standard",
+      "workspace_prefix": "tenant-a"
+    },
+    "tenant-b": {
+      "allowed_capabilities": ["chat", "code", "memory", "workflow-admin"],
+      "allowed_policy_packs": ["strict"],
+      "default_policy_pack": "strict",
+      "default_quota_class": "elevated",
+      "workspace_prefix": "tenant-b"
+    }
+  }
+}

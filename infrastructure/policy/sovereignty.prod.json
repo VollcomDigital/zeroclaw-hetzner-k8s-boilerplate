@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "rules": {
+    "public": {
+      "mode": "cross_boundary_allowed",
+      "allowed_regions": ["*"]
+    },
+    "internal": {
+      "mode": "in_region",
+      "allowed_regions": ["eu", "eu-central"]
+    },
+    "restricted": {
+      "mode": "local_only",
+      "allowed_regions": ["local"]
+    }
+  }
+}

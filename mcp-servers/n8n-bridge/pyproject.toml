@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "n8n-bridge"
+version = "0.1.0"
+description = "MCP bridge for n8n workflows and 1Password Connect."
+requires-python = ">=3.12"
+dependencies = [
+  "httpx",
+  "mcp",
+  "opentelemetry-api",
+  "opentelemetry-exporter-otlp-proto-http>=1.40.0,<2",
+  "opentelemetry-sdk",
+  "pydantic",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest",
+  "pytest-asyncio",
+  "respx",
+]
+
+[project.scripts]
+n8n-bridge = "n8n_bridge.server:main"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.setuptools.package-dir]
+"" = "src"
+
+[tool.setuptools.packages.find]
+where = ["src"]

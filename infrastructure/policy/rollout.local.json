@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "workflows": {
+    "workflow-primary": {
+      "mode": "shadow",
+      "primary_webhook_id": "workflow-primary",
+      "shadow_webhook_id": "workflow-shadow"
+    },
+    "workflow-canary": {
+      "mode": "canary",
+      "primary_webhook_id": "workflow-primary",
+      "canary_webhook_id": "workflow-canary",
+      "canary_percentage": 20
+    }
+  },
+  "prompts": {
+    "prompt-default": {
+      "mode": "full",
+      "active_prompt_version": "v2"
+    },
+    "prompt-canary": {
+      "mode": "canary",
+      "active_prompt_version": "v2",
+      "canary_prompt_version": "v3",
+      "canary_percentage": 10
+    }
+  }
+}

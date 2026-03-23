@@ -5,6 +5,7 @@ namespace: zeroclaw
 
 resources:
   - namespace.yaml
+  - networkpolicy.yaml
   - configmap.yaml
   - secret.yaml
   - deployment.yaml

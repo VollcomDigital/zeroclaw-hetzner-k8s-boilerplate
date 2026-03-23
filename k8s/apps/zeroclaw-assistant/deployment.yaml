@@ -28,8 +28,8 @@ spec:
       containers:
         # ── ZeroClaw Rust AI Assistant ──────────────────────────────
         - name: zeroclaw
-          image: ghcr.io/yourorg/zeroclaw-assistant:latest
-          imagePullPolicy: Always
+          image: ghcr.io/yourorg/zeroclaw-assistant@sha256:replace-with-published-image-digest
+          imagePullPolicy: IfNotPresent
           ports:
             - name: http
               containerPort: 8080

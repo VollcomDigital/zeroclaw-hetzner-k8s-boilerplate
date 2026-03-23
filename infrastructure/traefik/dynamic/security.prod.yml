@@ -1,0 +1,18 @@
+http:
+  middlewares:
+    security-headers:
+      headers:
+        # Legacy X-XSS-Protection header is deprecated; CSP below is the XSS control.
+        contentTypeNosniff: true
+        customFrameOptionsValue: DENY
+        forceSTSHeader: true
+        permissionsPolicy: "camera=(), geolocation=(), microphone=()"
+        referrerPolicy: no-referrer
+        stsIncludeSubdomains: true
+        stsPreload: true
+        stsSeconds: 31536000
+        # Enforced CSP: script-src is 'self' only (no inline scripts). style-src keeps 'unsafe-inline' for bundled UIs
+        # with inline CSS until they move to external styles or hashes. Per-route middlewares if one origin needs script inline.
+        contentSecurityPolicy: "default-src 'self'; base-uri 'self'; frame-ancestors 'none'; img-src 'self' data: https:; object-src 'none'; connect-src 'self' https: wss:; style-src 'self' 'unsafe-inline'; script-src 'self'; upgrade-insecure-requests"
+        # Report-Only: also drop style 'unsafe-inline' to surface inline-style violations without blocking.
+        contentSecurityPolicyReportOnly: "default-src 'self'; base-uri 'self'; frame-ancestors 'none'; img-src 'self' data: https:; object-src 'none'; connect-src 'self' https: wss:; style-src 'self'; script-src 'self'; upgrade-insecure-requests"

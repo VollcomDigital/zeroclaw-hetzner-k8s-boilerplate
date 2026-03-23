@@ -1,162 +1,194 @@
-# zeroclaw-hetzner-k8s-boilerplate
+# hybrid-enterprise-ai-agent-stack
 
-Kubernetes manifests for deploying a **24/7 personal ZeroClaw AI assistant** on a Hetzner Cloud Kubernetes cluster, secured behind a **Cloudflare Tunnel** and routed through an internal **LiteLLM AI Gateway**.
+Monorepo scaffold for a **hybrid enterprise AI agent platform** that supports:
+
+- local development on **Windows/WSL2** and **macOS Apple Silicon**
+- hardened **Docker Compose** deployment on **Hetzner bare-metal**
+- a secondary **Kubernetes ZeroClaw reference deployment**
+
+---
+
+## Canonical Platform Narrative
+
+This repository has **one canonical platform story**:
+
+- **Primary runtime: Docker Compose hybrid stack**  
+  The source of truth for the platform is the hybrid Compose topology defined in
+  `docker-compose.yml` and `docker-compose.local.yml`.
+
+- **Secondary reference deployment: Kubernetes ZeroClaw assistant**  
+  The manifests under `k8s/apps/zeroclaw-assistant/` are a focused reference
+  deployment for a ZeroClaw assistant running behind a Cloudflare Tunnel. They
+  are not the primary control plane for this repository.
+
+If a file or operational decision appears to conflict with that model, the
+Compose-based hybrid stack is the intended default.
 
 ---
 
 ## Architecture Overview
 
+Release-oriented component map and review checklist: [`docs/architecture.md`](docs/architecture.md).
+
+### Primary runtime: Docker Compose hybrid stack
+
 ```
 Internet
   │
   ▼
-Cloudflare Edge (TLS termination, Zero Trust)
-  │  Cloudflare Tunnel
-  ▼
-┌──────────────────────────────────────┐
-│  Hetzner K8s Cluster                 │
-│  ┌────────────────────────────────┐  │
-│  │  Pod: zeroclaw-assistant       │  │
-│  │  ┌──────────┐ ┌────────────┐  │  │
-│  │  │ zeroclaw │ │ cloudflared│  │  │
-│  │  │ (Rust)   │ │ (sidecar)  │  │  │
-│  │  └────┬─────┘ └────────────┘  │  │
-│  └───────┼────────────────────────┘  │
-│          │                           │
-│          ▼                           │
-│  LiteLLM AI Gateway                 │
-│  (cost tracking, rate limiting,     │
-│   model routing)                    │
-└──────────────────────────────────────┘
+Traefik
+  │
+  ├── oauth2-proxy (Entra ID ForwardAuth)
+  │
+  ├── OpenWork (frontend)
+  ├── n8n (workflow engine)
+  └── internal service routing
+        │
+        ├── OpenClaw (agent runtime)
+        ├── NemoClaw (sandbox)
+        ├── MCP n8n bridge
+        ├── 1Password Connect
+        ├── PostgreSQL
+        ├── Qdrant
+        └── vLLM / Ollama
 ```
 
-**Key design decisions:**
+### Secondary reference deployment: Kubernetes ZeroClaw assistant
 
-- **No public ingress.** ZeroClaw never binds to a public IP. All traffic flows through a Cloudflare Tunnel sidecar, which establishes an outbound-only connection to Cloudflare's edge.
-- **Aggressive resource limits.** The Rust binary is extremely lightweight (10Mi RAM request, 50Mi limit) making it cheap to run on small Hetzner nodes.
-- **AI Gateway routing.** All LLM API calls are proxied through a LiteLLM gateway for centralized cost tracking, rate limiting, and model routing.
+```
+Internet
+  │
+  ▼
+Cloudflare Edge
+  │
+  ▼
+Cloudflare Tunnel
+  │
+  ▼
+Hetzner Kubernetes
+  │
+  └── zeroclaw-assistant pod
+      ├── zeroclaw
+      └── cloudflared
+```
 
 ---
 
 ## Repository Structure
 
-```
+```text
+infrastructure/
+├── sso/                         # Entra ID / oauth2-proxy configuration
+└── traefik/                     # Static + dynamic Traefik configuration
+
+backend/
+├── openclaw/                    # Backend source mount point
+└── nemoclaw/                    # Sandbox source mount point
+
+frontend/
+└── openwork/                    # Frontend source mount point
+
+mcp-servers/
+└── n8n-bridge/                  # Python MCP server for n8n + 1Password
+
 k8s/
 └── apps/
-    └── zeroclaw-assistant/
-        ├── kustomization.yaml   # Kustomize entrypoint
-        ├── namespace.yaml       # zeroclaw namespace
-        ├── deployment.yaml      # ZeroClaw pod (Rust app + cloudflared sidecar)
-        ├── configmap.yaml       # Non-sensitive config (gateway URL)
-        └── secret.yaml          # Placeholder secrets (tunnel token, API key)
+    └── zeroclaw-assistant/      # Kubernetes reference deployment
+
+docker-compose.yml               # Production hybrid stack
+docker-compose.local.yml         # Local development stack
+Makefile                         # Standard local/prod orchestration commands
 ```
 
 ---
 
-## Prerequisites
+## Runtime Boundaries
 
-| Requirement | Details |
-|---|---|
-| **Hetzner K8s cluster** | A running cluster with `kubectl` access configured |
-| **Cloudflare Tunnel** | A tunnel created in the [Cloudflare Zero Trust dashboard](https://one.dash.cloudflare.com/) with a valid token |
-| **LiteLLM Gateway** | An accessible LiteLLM proxy instance and a virtual API key |
-| **Container image** | The ZeroClaw Rust binary published to a registry (default: `ghcr.io/yourorg/zeroclaw-assistant`) |
+- `docker-compose.yml`  
+  Production topology for Hetzner bare-metal with Traefik, Entra ID SSO,
+  vLLM, n8n, PostgreSQL, 1Password Connect, Qdrant, OpenClaw, NemoClaw,
+  OpenWork, and the MCP bridge.
+
+- `docker-compose.local.yml`  
+  Local development topology with:
+  - `windows` profile for `vLLM`
+  - `mac` profile for `Ollama`
+  - bind mounts for `frontend/` and `backend/`
+  - local HTTP-only Traefik without SSO
+
+- `k8s/apps/zeroclaw-assistant/`  
+  A separate, reference-grade K8s deployment pattern for a Cloudflare Tunnel
+  fronted ZeroClaw assistant.
 
 ---
 
 ## Quick Start
 
-### 1. Configure Secrets
+### Local development
 
-Edit `k8s/apps/zeroclaw-assistant/secret.yaml` and replace the placeholder values:
+`make dev-mac` / `make dev-windows` expect **Bash** (e.g. Git for Windows). They copy `.env.local.example` → `.env.local` when missing and seed `secrets/1password-credentials.json` from the example file so Compose bind mounts succeed (replace that file with a real Connect bundle before using MCP secret tools).
 
-```yaml
-stringData:
-  cloudflare_tunnel_token: "<your-tunnel-token>"
-  litellm_api_key: "<your-virtual-api-key>"
+For a **GPU-free** local slice (infra + n8n + MCP bridge only, no agents), use `make dev-core` — intended for smoke tests or constrained hosts, not day-to-day development. See `docs/architecture.md` for profile details.
+
+On **Windows** without Git Bash, run `pwsh -File .\scripts\local-dev.ps1` from the repo root (same defaults as `make dev-windows`). Use `-Profile core` for the GPU-free stack, `-Profile mac` for Apple Silicon parity, or `-Profile down` to stop. VS Code: tasks **Compose: local up (Windows full)** / **core** / **down**.
+
+**Traefik** is pinned to a Docker 29-compatible release in this repo. If you still test `http://localhost/` directly and see `404`, that is expected: the local routers match hostnames such as `openclaw.localhost`, `n8n.localhost`, and `openwork.localhost`, not bare `localhost`. **OpenClaw** serves the [Control UI](https://docs.openclaw.ai/web/control-ui) through the image **nginx** on **8080**; Traefik targets that for `http://openclaw.localhost/`. The **gateway** still listens on **18789** (published at `http://127.0.0.1:18789/`). If the UI shows **gateway token missing / unauthorized**, paste the same value as `OPENCLAW_GATEWAY_TOKEN` from `.env.local` into **Control UI → Settings**, or open once with the token in the query string, e.g. `http://openclaw.localhost/?token=<OPENCLAW_GATEWAY_TOKEN>` (and the same pattern on `http://127.0.0.1:18789/` if you use the direct gateway port). **Pairing required** (WebSocket `1008`): OpenClaw [auto-approves only loopback](https://docs.openclaw.ai/web/control-ui#device-pairing-first-connection); this repo’s `infrastructure/openclaw/gateway.local.json` sets `dangerouslyDisableDeviceAuth` for local Docker so `openclaw.localhost` works without `openclaw devices approve`. Prefer `http://127.0.0.1:18789/` if you want the stock behavior without that flag.
+
+**n8n** is also bound to **http://127.0.0.1:5678** on the host (in addition to Traefik + `N8N_HOST`) so you can still open the UI if Docker Desktop regresses the Docker provider again in a future update.
+
+```bash
+cp .env.local.example .env.local
+make dev-mac
 ```
 
-> **Production note:** Do not commit real secrets. Use [Sealed Secrets](https://github.com/bitnami-labs/sealed-secrets), [External Secrets Operator](https://external-secrets.io/), or inject via CI/CD.
+or:
 
-### 2. Configure the Gateway URL
-
-Edit `k8s/apps/zeroclaw-assistant/configmap.yaml` if your LiteLLM gateway URL differs from the default:
-
-```yaml
-data:
-  litellm_gateway_url: "https://ai-gateway.yourcompany.com"
+```bash
+cp .env.local.example .env.local
+make dev-windows
 ```
 
-### 3. Update the Container Image
+### Production
 
-In `k8s/apps/zeroclaw-assistant/deployment.yaml`, replace the image reference with your actual registry path and tag:
-
-```yaml
-image: ghcr.io/yourorg/zeroclaw-assistant:v0.1.0
+```bash
+cp .env.prod.example .env.prod
+make prod
 ```
 
-### 4. Deploy
+### Kubernetes reference deployment
 
 ```bash
 kubectl apply -k k8s/apps/zeroclaw-assistant/
 ```
 
-### 5. Verify
+---
 
-```bash
-kubectl -n zeroclaw get pods
-kubectl -n zeroclaw logs deploy/zeroclaw-assistant -c zeroclaw
-kubectl -n zeroclaw logs deploy/zeroclaw-assistant -c cloudflared
-```
+## MCP control plane
+
+Operational reference for MCP tools, policy bundles, and bridge environment variables: [`docs/mcp-control-plane.md`](docs/mcp-control-plane.md).
 
 ---
 
-## Resource Budget
+## Security Posture
 
-| Container | CPU Request | CPU Limit | Memory Request | Memory Limit |
-|---|---|---|---|---|
-| `zeroclaw` | 10m | 100m | 10Mi | 50Mi |
-| `cloudflared` | 10m | 50m | 32Mi | 64Mi |
-| **Pod total** | **20m** | **150m** | **42Mi** | **114Mi** |
-
-The entire pod fits comfortably on the smallest Hetzner node types (CX11 / CAX11).
+- segmented Docker networks across proxy, app, db, and AI tiers
+- non-root execution defaults in Compose and Kubernetes
+- read-only root filesystems for production services where supported
+- ForwardAuth in front of user-facing production services
+- placeholder-only secrets in version control
 
 ---
 
-## Security
+## Current Scope Notes
 
-- **Zero Trust networking** — No `LoadBalancer` or `NodePort` services. All ingress is via Cloudflare Tunnel.
-- **Read-only root filesystem** — Both containers run with `readOnlyRootFilesystem: true`.
-- **Non-root execution** — Both containers run as unprivileged users.
-- **Capabilities dropped** — All Linux capabilities are dropped.
-- **Secret rotation** — Secrets are referenced from a Kubernetes Secret object; rotate by updating the Secret and restarting the pod.
-
----
-
-## Customization
-
-### Adding more assistants
-
-Duplicate the `k8s/apps/zeroclaw-assistant/` directory, update the names and labels, and add the new directory to your Kustomize overlay or ArgoCD `Application`.
-
-### Scaling
-
-Increase `spec.replicas` in `deployment.yaml`. The Cloudflare Tunnel connector handles load balancing across replicas automatically.
-
-### Monitoring
-
-Add Prometheus annotations to the pod template if your cluster runs a Prometheus stack:
-
-```yaml
-metadata:
-  annotations:
-    prometheus.io/scrape: "true"
-    prometheus.io/port: "8080"
-    prometheus.io/path: "/metrics"
-```
+- This repository currently contains **platform scaffolding and integration
+  glue**.
+- The `backend/openclaw`, `backend/nemoclaw`, and `frontend/openwork`
+  directories are currently mount points/placeholders rather than full
+  in-repo upstream application sources.
 
 ---
 
 ## License
 
-See [LICENSE](LICENSE) for details.
+[MIT](LICENSE).

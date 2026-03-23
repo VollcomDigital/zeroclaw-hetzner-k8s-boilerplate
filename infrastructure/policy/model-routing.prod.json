@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "default_route": "remote_secure",
+  "routes": {
+    "local_vllm": {
+      "base_url": "http://vllm:8000/v1",
+      "model": "meta-llama/Llama-3.1-8B-Instruct",
+      "provider": "vllm",
+      "capabilities": ["chat", "code", "reasoning"],
+      "allowed_data_classifications": ["public", "internal"],
+      "regions": ["eu-central", "local"],
+      "max_latency_ms": 1200,
+      "priority": 10,
+      "requires_local": true,
+      "healthy": true,
+      "current_gpu_utilization_percent": 40,
+      "max_gpu_utilization_percent": 85,
+      "current_concurrent_requests": 0,
+      "max_concurrent_requests": 8,
+      "estimated_cost_per_1k_tokens_usd": 0.002,
+      "daily_budget_usd": 25.0,
+      "current_spend_usd": 0.0
+    },
+    "remote_secure": {
+      "base_url": "https://secure-llm.example.com/v1",
+      "model": "replace-with-remote-secure-model",
+      "provider": "remote",
+      "capabilities": ["chat", "code", "reasoning"],
+      "allowed_data_classifications": ["public", "internal", "restricted"],
+      "regions": ["*"],
+      "max_latency_ms": 4000,
+      "priority": 50,
+      "requires_local": false,
+      "healthy": true,
+      "estimated_cost_per_1k_tokens_usd": 0.02,
+      "daily_budget_usd": 250.0,
+      "current_spend_usd": 0.0
+    }
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "default_action": "allow",
+  "tools": {
+    "plan_sovereignty_mode": {},
+    "plan_autonomous_optimization": {},
+    "plan_compliance_case": {},
+    "plan_agent_control_plane": {},
+    "plan_confidential_execution": {},
+    "plan_failure_mode": {},
+    "plan_progressive_rollout": {},
+    "plan_vector_memory_lifecycle": {},
+    "trigger_n8n_workflow": {
+      "allowed_webhook_ids": [
+        "*"
+      ]
+    },
+    "get_1password_secret": {
+      "allowed_vault_ids": [
+        "*"
+      ],
+      "allowed_item_ids": [
+        "*"
+      ],
+      "allowed_field_labels": [
+        "*"
+      ]
+    }
+  }
+}

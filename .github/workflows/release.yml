@@ -1,0 +1,91 @@
+name: release
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release-mcp-bridge:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install build tooling
+        run: python -m pip install --upgrade pip build
+
+      - name: Build MCP bridge distributions
+        run: python -m build --sdist --wheel --outdir dist ./mcp-servers/n8n-bridge
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/mcp-n8n-bridge
+          tags: |
+            type=ref,event=tag
+            type=sha
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push MCP bridge container
+        uses: docker/build-push-action@v6
+        with:
+          context: ./mcp-servers/n8n-bridge
+          file: ./mcp-servers/n8n-bridge/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          sbom: true
+          provenance: mode=max
+
+      - name: Generate release manifest
+        env:
+          GH_REPOSITORY: ${{ github.repository }}
+          GH_REF: ${{ github.ref }}
+          GH_SHA: ${{ github.sha }}
+          GH_REPOSITORY_OWNER: ${{ github.repository_owner }}
+          META_TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          python3 <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          tags = [line.strip() for line in os.environ["META_TAGS"].splitlines() if line.strip()]
+          manifest = {
+              "repository": os.environ["GH_REPOSITORY"],
+              "ref": os.environ["GH_REF"],
+              "sha": os.environ["GH_SHA"],
+              "image": f"ghcr.io/{os.environ['GH_REPOSITORY_OWNER']}/mcp-n8n-bridge",
+              "image_tags": tags,
+          }
+          Path("release-manifest.json").write_text(
+              json.dumps(manifest, indent=2) + "\n",
+              encoding="utf-8",
+          )
+          PY
+
+      - name: Upload release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: mcp-n8n-bridge-release-artifacts
+          path: |
+            dist/*
+            release-manifest.json

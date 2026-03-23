@@ -1,0 +1,8 @@
+http:
+  middlewares:
+    local-security-headers:
+      headers:
+        contentTypeNosniff: true
+        customFrameOptionsValue: SAMEORIGIN
+        permissionsPolicy: "camera=(), geolocation=(), microphone=()"
+        referrerPolicy: no-referrer

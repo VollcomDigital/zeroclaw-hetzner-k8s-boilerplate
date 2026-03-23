@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "default_action": "retain",
+  "classification_rules": {
+    "public": {
+      "retention_days": 30,
+      "expiry_action": "delete"
+    },
+    "internal": {
+      "retention_days": 14,
+      "expiry_action": "delete"
+    },
+    "restricted": {
+      "retention_days": 7,
+      "expiry_action": "delete"
+    }
+  },
+  "pii_overrides": {
+    "email": {
+      "retention_days": 3,
+      "expiry_action": "delete"
+    },
+    "phone": {
+      "retention_days": 3,
+      "expiry_action": "delete"
+    },
+    "government_id": {
+      "retention_days": 1,
+      "expiry_action": "delete"
+    }
+  }
+}

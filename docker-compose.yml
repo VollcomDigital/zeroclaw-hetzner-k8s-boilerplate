@@ -1,0 +1,438 @@
+name: hybrid-ai-agent-stack
+
+# Shared process limits + logging + capability drop. No user/read_only/tmpfs here—vendor images expect their own UIDs and writable paths.
+x-runtime-defaults: &runtime_defaults
+  restart: unless-stopped
+  pids_limit: 256
+  cap_drop:
+    - ALL
+  security_opt:
+    - no-new-privileges:true
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "5"
+
+# First-party / minimal images we control: fixed UID, read-only root, scratch /tmp.
+x-hardened-defaults: &hardened_defaults
+  <<: *runtime_defaults
+  user: "${APP_UID:-1000}:${APP_GID:-1000}"
+  read_only: true
+  tmpfs:
+    - /tmp:rw,noexec,nosuid,size=256m
+
+services:
+  alloy:
+    <<: *runtime_defaults
+    image: grafana/alloy:v1.8.2
+    command:
+      - run
+      - /etc/alloy/config.alloy
+      - --server.http.listen-addr=0.0.0.0:12345
+    expose:
+      - "4317"
+      - "4318"
+      - "12345"
+    volumes:
+      - ./infrastructure/observability/alloy.prod.alloy:/etc/alloy/config.alloy:ro
+    networks:
+      - app-tier
+      - ai-tier
+
+  traefik:
+    <<: *runtime_defaults
+    user: "0:0"
+    image: traefik:v3.6.1
+    command:
+      - --configFile=/etc/traefik/traefik.yml
+      - --certificatesresolvers.letsencrypt.acme.email=${TRAEFIK_ACME_EMAIL}
+      - --certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json
+      - --certificatesresolvers.letsencrypt.acme.httpchallenge.entrypoint=web
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./infrastructure/traefik/traefik.prod.yml:/etc/traefik/traefik.yml:ro
+      - ./infrastructure/traefik/dynamic:/etc/traefik/dynamic:ro
+      - traefik-acme:/letsencrypt
+    networks:
+      - proxy-tier
+      - app-tier
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=hybrid_proxy_tier
+      - traefik.http.routers.traefik-dashboard.rule=Host(`traefik.${DOMAIN}`)
+      - traefik.http.routers.traefik-dashboard.entrypoints=websecure
+      - traefik.http.routers.traefik-dashboard.tls.certresolver=letsencrypt
+      - traefik.http.routers.traefik-dashboard.middlewares=entra-errors@docker,entra-auth@docker,security-headers@file
+      - traefik.http.routers.traefik-dashboard.service=api@internal
+
+  sso:
+    <<: *runtime_defaults
+    image: quay.io/oauth2-proxy/oauth2-proxy:v7.8.1
+    command:
+      - --config=/etc/oauth2-proxy/oauth2-proxy.cfg
+    environment:
+      OAUTH2_PROXY_CLIENT_ID: ${ENTRA_CLIENT_ID}
+      OAUTH2_PROXY_CLIENT_SECRET: ${ENTRA_CLIENT_SECRET}
+      OAUTH2_PROXY_COOKIE_SECRET: ${OAUTH2_COOKIE_SECRET}
+      OAUTH2_PROXY_COOKIE_DOMAINS: .${DOMAIN}
+      OAUTH2_PROXY_EMAIL_DOMAINS: ${ENTRA_ALLOWED_EMAIL_DOMAINS:?ENTRA_ALLOWED_EMAIL_DOMAINS must be set in production}
+      OAUTH2_PROXY_OIDC_ISSUER_URL: https://login.microsoftonline.com/${ENTRA_TENANT_ID}/v2.0
+      OAUTH2_PROXY_REDIRECT_URL: https://${SSO_HOST}/oauth2/callback
+      OAUTH2_PROXY_WHITELIST_DOMAINS: .${DOMAIN}
+      OAUTH2_PROXY_ALLOWED_GROUPS: ${ENTRA_ALLOWED_GROUPS:?ENTRA_ALLOWED_GROUPS must be set in production}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://alloy:4318}
+      OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+      OTEL_PROPAGATORS: tracecontext,baggage
+      OTEL_SERVICE_NAME: sso
+    expose:
+      - "4180"
+    volumes:
+      - ./infrastructure/sso/oauth2-proxy.cfg:/etc/oauth2-proxy/oauth2-proxy.cfg:ro
+    networks:
+      - proxy-tier
+      - app-tier
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=hybrid_proxy_tier
+      - 'traefik.http.routers.sso.rule=Host(`${SSO_HOST}`)'
+      - traefik.http.routers.sso.entrypoints=websecure
+      - traefik.http.routers.sso.tls.certresolver=letsencrypt
+      - traefik.http.services.sso.loadbalancer.server.port=4180
+      - traefik.http.middlewares.entra-auth.forwardauth.address=http://sso:4180/oauth2/auth
+      - traefik.http.middlewares.entra-auth.forwardauth.trustForwardHeader=true
+      - traefik.http.middlewares.entra-auth.forwardauth.authResponseHeaders=X-Auth-Request-User,X-Auth-Request-Email,X-Auth-Request-Access-Token,Authorization,Set-Cookie
+      - traefik.http.middlewares.entra-errors.errors.status=401-403
+      - traefik.http.middlewares.entra-errors.errors.service=sso@docker
+      - traefik.http.middlewares.entra-errors.errors.query=/oauth2/sign_in?rd={url}
+
+  openwork:
+    <<: *runtime_defaults
+    image: ${OPENWORK_IMAGE}
+    environment:
+      PORT: "${OPENWORK_PORT:-3000}"
+      OPENCLAW_BASE_URL: http://openclaw:${OPENCLAW_PORT:-18789}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://alloy:4318}
+      OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+      OTEL_PROPAGATORS: tracecontext,baggage
+      OTEL_SERVICE_NAME: openwork
+      TZ: ${TZ:-UTC}
+    expose:
+      - "${OPENWORK_PORT:-3000}"
+    depends_on:
+      - openclaw
+    networks:
+      - proxy-tier
+      - app-tier
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=hybrid_proxy_tier
+      - 'traefik.http.routers.openwork.rule=Host(`${OPENWORK_HOST}`)'
+      - traefik.http.routers.openwork.entrypoints=websecure
+      - traefik.http.routers.openwork.tls.certresolver=letsencrypt
+      - traefik.http.routers.openwork.middlewares=entra-errors@docker,entra-auth@docker,security-headers@file
+      - traefik.http.services.openwork.loadbalancer.server.port=${OPENWORK_PORT:-3000}
+
+  # coollabsio/openclaw nginx proxies /browser/ → http://browser:3000/ (see image /app/scripts/entrypoint.sh).
+  browser:
+    <<: *runtime_defaults
+    image: python:3.12-alpine
+    command:
+      - python
+      - -m
+      - http.server
+      - "3000"
+      - --bind
+      - "0.0.0.0"
+      - --directory
+      - /tmp
+    expose:
+      - "3000"
+    networks:
+      - app-tier
+      - ai-tier
+
+  openclaw:
+    <<: *runtime_defaults
+    # Writable root: image entrypoint mutates paths under /home/linuxbrew (no dedicated volume).
+    read_only: false
+    # Image entrypoint mutates root-owned paths under /home/linuxbrew; APP_UID 1000 breaks cleanup.
+    user: "0:0"
+    cap_add:
+      - DAC_OVERRIDE
+      - FOWNER
+      - CHOWN
+    image: ${OPENCLAW_IMAGE}
+    entrypoint: ["/bin/sh", "/etc/openclaw/entrypoint-docker.sh"]
+    environment:
+      MCP_N8N_URL: http://mcp-server-n8n:8000/mcp
+      NEMOCLAW_BASE_URL: http://nemoclaw:8080
+      OPENCLAW_LLM_BASE_URL: ${OPENCLAW_LLM_BASE_URL:-http://vllm:8000/v1}
+      QDRANT_URL: http://qdrant:6333
+      QDRANT_API_KEY: ${QDRANT_API_KEY}
+      OTEL_SERVICE_NAME: openclaw
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://alloy:4318}
+      OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+      OTEL_PROPAGATORS: tracecontext,baggage
+      TZ: ${TZ:-UTC}
+    expose:
+      - "${OPENCLAW_PORT:-18789}"
+    depends_on:
+      - browser
+      - vllm
+      - nemoclaw
+      - mcp-server-n8n
+      - qdrant
+    volumes:
+      - ./infrastructure/openclaw/entrypoint-docker.sh:/etc/openclaw/entrypoint-docker.sh:ro
+      - openclaw-data:/data
+    networks:
+      - app-tier
+      - ai-tier
+
+  nemoclaw:
+    <<: *runtime_defaults
+    image: ${NEMOCLAW_IMAGE}
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["while true; do sleep 86400; done"]
+    environment:
+      OPENSHELL_SANDBOX_ROOT: /sandbox
+      OTEL_SERVICE_NAME: nemoclaw
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://alloy:4318}
+      OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+      OTEL_PROPAGATORS: tracecontext,baggage
+      TZ: ${TZ:-UTC}
+    expose:
+      - "8080"
+    volumes:
+      - nemoclaw-data:/sandbox
+    networks:
+      - app-tier
+      - ai-tier
+
+  vllm:
+    <<: *runtime_defaults
+    user: "0:0"
+    image: ${VLLM_IMAGE}
+    command:
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+      - --model
+      - ${VLLM_MODEL}
+      - --max-model-len
+      - ${VLLM_MAX_MODEL_LEN:-8192}
+    environment:
+      HF_HOME: /root/.cache/huggingface
+      HUGGING_FACE_HUB_TOKEN: ${HUGGING_FACE_HUB_TOKEN:-}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://alloy:4318}
+      OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+      OTEL_PROPAGATORS: tracecontext,baggage
+      OTEL_SERVICE_NAME: vllm
+      TZ: ${TZ:-UTC}
+    expose:
+      - "8000"
+    shm_size: "8gb"
+    volumes:
+      - vllm-cache:/root/.cache/huggingface
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities:
+                - gpu
+    networks:
+      # egress-tier first: non-internal default route for HuggingFace model pulls; ai-tier for mesh to OpenClaw, etc.
+      - egress-tier
+      - ai-tier
+
+  1password-connect-api:
+    <<: *runtime_defaults
+    image: ${OP_CONNECT_API_IMAGE:?OP_CONNECT_API_IMAGE must be set to an immutable image reference}
+    environment:
+      OP_HTTP_PORT: "8080"
+      OP_LOG_LEVEL: info
+      OP_SESSION: /home/opuser/.op/1password-credentials.json
+      TZ: ${TZ:-UTC}
+    expose:
+      - "8080"
+    volumes:
+      - ${OP_CONNECT_CREDENTIALS_FILE}:/home/opuser/.op/1password-credentials.json:ro
+      - op-connect-data:/home/opuser/.op/data
+    networks:
+      - app-tier
+
+  1password-connect-sync:
+    <<: *runtime_defaults
+    image: ${OP_CONNECT_SYNC_IMAGE:?OP_CONNECT_SYNC_IMAGE must be set to an immutable image reference}
+    environment:
+      OP_HTTP_PORT: "8080"
+      OP_LOG_LEVEL: info
+      OP_SESSION: /home/opuser/.op/1password-credentials.json
+      TZ: ${TZ:-UTC}
+    volumes:
+      - ${OP_CONNECT_CREDENTIALS_FILE}:/home/opuser/.op/1password-credentials.json:ro
+      - op-connect-data:/home/opuser/.op/data
+    depends_on:
+      - 1password-connect-api
+    networks:
+      - app-tier
+
+  postgres:
+    <<: *runtime_defaults
+    # Override anchor: postgres:16-alpine entrypoint expects root (gosu → postgres UID 70); UID 1000 breaks initdb on the volume.
+    user: "0:0"
+    # Anchor uses cap_drop: ALL; entrypoint needs chown/chmod/setuid for PGDATA + gosu.
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+      - SETGID
+      - SETUID
+    image: postgres:16-alpine
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=256m
+      - /run/postgresql:rw,nosuid,noexec,mode=1777
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_USER: ${POSTGRES_USER}
+      TZ: ${TZ:-UTC}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - db-tier
+
+  n8n:
+    <<: *runtime_defaults
+    image: ${N8N_IMAGE:?N8N_IMAGE must be set to an immutable image reference}
+    environment:
+      DB_TYPE: postgresdb
+      DB_POSTGRESDB_DATABASE: ${POSTGRES_DB}
+      DB_POSTGRESDB_HOST: postgres
+      DB_POSTGRESDB_PASSWORD: ${POSTGRES_PASSWORD}
+      DB_POSTGRESDB_PORT: "5432"
+      DB_POSTGRESDB_USER: ${POSTGRES_USER}
+      N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY}
+      N8N_HOST: ${N8N_HOST}
+      N8N_PROTOCOL: https
+      N8N_SECURE_COOKIE: "true"
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://alloy:4318}
+      OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+      OTEL_PROPAGATORS: tracecontext,baggage
+      OTEL_SERVICE_NAME: n8n
+      WEBHOOK_URL: https://${N8N_HOST}/
+      TZ: ${TZ:-UTC}
+    expose:
+      - "5678"
+    depends_on:
+      - postgres
+    volumes:
+      - n8n-data:/home/node/.n8n
+    networks:
+      - proxy-tier
+      - app-tier
+      - db-tier
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=hybrid_proxy_tier
+      - 'traefik.http.routers.n8n.rule=Host(`${N8N_HOST}`)'
+      - traefik.http.routers.n8n.entrypoints=websecure
+      - traefik.http.routers.n8n.tls.certresolver=letsencrypt
+      - traefik.http.routers.n8n.middlewares=entra-errors@docker,entra-auth@docker,security-headers@file
+      - traefik.http.services.n8n.loadbalancer.server.port=5678
+
+  mcp-server-n8n:
+    <<: *hardened_defaults
+    image: ${MCP_N8N_BRIDGE_IMAGE:?MCP_N8N_BRIDGE_IMAGE must be set to a published image reference (e.g. ghcr.io/your-org/n8n-bridge@sha256:...)}
+    environment:
+      BRIDGE_ACCESS_TOKEN: ${BRIDGE_ACCESS_TOKEN}
+      BRIDGE_AUDIT_LEDGER_PATH: ${BRIDGE_AUDIT_LEDGER_PATH:-/var/lib/n8n-bridge/audit-ledger.jsonl}
+      BRIDGE_MCP_POLICY_CONFIG_PATH: ${BRIDGE_MCP_POLICY_CONFIG_PATH:-${BRIDGE_POLICY_FILE_PATH:-/etc/n8n-bridge/policy.json}}
+      BRIDGE_MODEL_ROUTING_CONFIG_PATH: ${BRIDGE_MODEL_ROUTING_CONFIG_PATH:-${BRIDGE_ROUTING_FILE_PATH:-/etc/n8n-bridge/model-routing.json}}
+      BRIDGE_VECTOR_MEMORY_CONFIG_PATH: ${BRIDGE_VECTOR_MEMORY_CONFIG_PATH:-${BRIDGE_VECTOR_MEMORY_POLICY_FILE_PATH:-/etc/n8n-bridge/vector-memory-policy.json}}
+      BRIDGE_PROGRESSIVE_ROLLOUT_CONFIG_PATH: ${BRIDGE_PROGRESSIVE_ROLLOUT_CONFIG_PATH:-${BRIDGE_ROLLOUT_FILE_PATH:-/etc/n8n-bridge/rollout.json}}
+      BRIDGE_FAILURE_MODE_CONFIG_PATH: ${BRIDGE_FAILURE_MODE_CONFIG_PATH:-${BRIDGE_FAILURE_MODE_FILE_PATH:-/etc/n8n-bridge/failure-mode.json}}
+      BRIDGE_CONFIDENTIAL_EXECUTION_CONFIG_PATH: ${BRIDGE_CONFIDENTIAL_EXECUTION_CONFIG_PATH:-${BRIDGE_CONFIDENTIAL_EXECUTION_FILE_PATH:-/etc/n8n-bridge/confidential-execution.json}}
+      BRIDGE_AGENT_CONTROL_PLANE_CONFIG_PATH: ${BRIDGE_AGENT_CONTROL_PLANE_CONFIG_PATH:-${BRIDGE_AGENT_CONTROL_PLANE_FILE_PATH:-/etc/n8n-bridge/agent-control-plane.json}}
+      BRIDGE_COMPLIANCE_PLATFORM_CONFIG_PATH: ${BRIDGE_COMPLIANCE_PLATFORM_CONFIG_PATH:-${BRIDGE_COMPLIANCE_PLATFORM_FILE_PATH:-/etc/n8n-bridge/compliance-platform.json}}
+      BRIDGE_AUTONOMOUS_OPTIMIZATION_CONFIG_PATH: ${BRIDGE_AUTONOMOUS_OPTIMIZATION_CONFIG_PATH:-${BRIDGE_AUTONOMOUS_OPTIMIZATION_FILE_PATH:-/etc/n8n-bridge/autonomous-optimization.json}}
+      BRIDGE_SOVEREIGNTY_CONFIG_PATH: ${BRIDGE_SOVEREIGNTY_CONFIG_PATH:-${BRIDGE_SOVEREIGNTY_FILE_PATH:-/etc/n8n-bridge/sovereignty.json}}
+      MCP_HOST: 0.0.0.0
+      MCP_PORT: "8000"
+      N8N_BASE_URL: http://n8n:5678
+      OP_CONNECT_URL: http://1password-connect-api:8080
+      OP_CONNECT_TOKEN: ${OP_CONNECT_TOKEN}
+      OTEL_SERVICE_NAME: mcp-server-n8n
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://alloy:4318}
+      OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+      OTEL_PROPAGATORS: tracecontext,baggage
+      TZ: ${TZ:-UTC}
+    expose:
+      - "8000"
+    depends_on:
+      - n8n
+      - 1password-connect-api
+    volumes:
+      - mcp-audit-data:/var/lib/n8n-bridge
+      - ./infrastructure/policy/mcp-policy.prod.json:/etc/n8n-bridge/policy.json:ro
+      - ./infrastructure/policy/model-routing.prod.json:/etc/n8n-bridge/model-routing.json:ro
+      - ./infrastructure/policy/vector-memory.prod.json:/etc/n8n-bridge/vector-memory-policy.json:ro
+      - ./infrastructure/policy/rollout.prod.json:/etc/n8n-bridge/rollout.json:ro
+      - ./infrastructure/policy/failure-mode.prod.json:/etc/n8n-bridge/failure-mode.json:ro
+      - ./infrastructure/policy/confidential-execution.prod.json:/etc/n8n-bridge/confidential-execution.json:ro
+      - ./infrastructure/policy/agent-control-plane.prod.json:/etc/n8n-bridge/agent-control-plane.json:ro
+      - ./infrastructure/policy/compliance-platform.prod.json:/etc/n8n-bridge/compliance-platform.json:ro
+      - ./infrastructure/policy/autonomous-optimization.prod.json:/etc/n8n-bridge/autonomous-optimization.json:ro
+      - ./infrastructure/policy/sovereignty.prod.json:/etc/n8n-bridge/sovereignty.json:ro
+    networks:
+      - app-tier
+
+  qdrant:
+    <<: *runtime_defaults
+    image: ${QDRANT_IMAGE:?QDRANT_IMAGE must be set to an immutable image reference}
+    environment:
+      QDRANT__SERVICE__API_KEY: ${QDRANT_API_KEY}
+      TZ: ${TZ:-UTC}
+    expose:
+      - "6333"
+    volumes:
+      - qdrant-data:/qdrant/storage
+    networks:
+      - ai-tier
+
+volumes:
+  traefik-acme:
+  op-connect-data:
+  openclaw-data:
+  nemoclaw-data:
+  n8n-data:
+  postgres-data:
+  qdrant-data:
+  vllm-cache:
+  mcp-audit-data:
+
+networks:
+  proxy-tier:
+    name: hybrid_proxy_tier
+    internal: false
+  app-tier:
+    name: hybrid_app_tier
+    internal: true
+  db-tier:
+    name: hybrid_db_tier
+    internal: true
+  ai-tier:
+    name: hybrid_ai_tier
+    internal: true
+  # Non-internal: default route for HuggingFace when paired with internal ai-tier on vllm.
+  egress-tier:
+    name: hybrid_egress_tier
+    internal: false

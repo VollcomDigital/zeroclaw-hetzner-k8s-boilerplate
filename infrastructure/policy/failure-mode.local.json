@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "default_action": "degrade",
+  "rules": {
+    "model_router:upstream_timeout": {
+      "action": "failover",
+      "max_retries": 1,
+      "fallback_target": "remote_secure"
+    },
+    "n8n:upstream_timeout": {
+      "action": "retry",
+      "max_retries": 2,
+      "backoff_seconds": [1, 5, 15]
+    },
+    "1password:auth_error": {
+      "action": "halt",
+      "max_retries": 0
+    }
+  }
+}

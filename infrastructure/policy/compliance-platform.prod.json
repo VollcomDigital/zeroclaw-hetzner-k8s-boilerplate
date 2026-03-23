@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "regulations": {
+    "gdpr": {
+      "erase_targets": ["vector_memory", "workflow_history", "audit_ledger"],
+      "evidence_requirements": ["decision_log", "retention_policy", "erase_report"],
+      "default_residency": "eu"
+    },
+    "ai-act": {
+      "erase_targets": [],
+      "evidence_requirements": ["risk_register", "model_card", "decision_log"],
+      "default_residency": "eu"
+    }
+  }
+}
