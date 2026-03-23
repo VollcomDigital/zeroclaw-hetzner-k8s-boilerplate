@@ -1,6 +1,6 @@
 # Architecture index
 
-Release-oriented map of this repository’s **hybrid enterprise AI agent** platform. It aligns with the canonical narrative: **primary runtime** is Docker Compose (`docker-compose.yml` / `docker-compose.local.yml`); **secondary reference** is Kubernetes under `k8s/apps/zeroclaw-assistant/`.
+Release-oriented map of this repository’s **hybrid enterprise AI agent** platform. It aligns with the canonical narrative: the runtime source of truth is Docker Compose (`docker-compose.yml` / `docker-compose.local.yml`).
 
 ## Purpose
 
@@ -19,10 +19,6 @@ Production traffic enters through reverse proxy and SSO, then fans out to user-f
 | `windows` | Full stack on Windows hosts (vLLM + OpenClaw / NemoClaw / OpenWork). Use `make dev-windows`. |
 | `mac` | Full stack on Apple Silicon (Ollama + agents). Use `make dev-mac`. |
 | `core` | **Optional** GPU-free slice: Traefik, Alloy, Postgres, n8n, MCP bridge, Qdrant, 1Password Connect — for CI validation or smoke tests only (`make dev-core` / `make validate-local-core`). |
-
-### Secondary runtime (Kubernetes)
-
-The ZeroClaw assistant reference stack runs on Kubernetes behind a Cloudflare Tunnel. Manifests live in `k8s/apps/zeroclaw-assistant/`. It is **not** the primary control plane for day-to-day platform changes in this repo.
 
 ## Compose component index
 
@@ -85,7 +81,7 @@ Policy files are **versioned contracts**: changing a bundle implies coordinated 
 2. Verify Entra / SSO placeholders are non-wildcard for production (`README` narrative + `infrastructure/sso/`).
 3. Reconcile MCP policy deltas: `infrastructure/policy/*.prod.json` matches mounted paths in the `mcp-server-n8n` service.
 4. Scan OTel endpoints and Alloy wiring for environment-specific URLs.
-5. If touching Kubernetes manifests, state explicitly whether the change is **reference-only** or promoted to operational default.
+5. Keep `README.md` and this architecture index aligned with the Compose-first runtime narrative.
 
 ## Related documentation
 

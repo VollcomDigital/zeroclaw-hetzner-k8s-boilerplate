@@ -4,7 +4,6 @@ Monorepo scaffold for a **hybrid enterprise AI agent platform** that supports:
 
 - local development on **Windows/WSL2** and **macOS Apple Silicon**
 - hardened **Docker Compose** deployment on **Hetzner bare-metal**
-- a secondary **Kubernetes ZeroClaw reference deployment**
 
 ---
 
@@ -15,11 +14,6 @@ This repository has **one canonical platform story**:
 - **Primary runtime: Docker Compose hybrid stack**  
   The source of truth for the platform is the hybrid Compose topology defined in
   `docker-compose.yml` and `docker-compose.local.yml`.
-
-- **Secondary reference deployment: Kubernetes ZeroClaw assistant**  
-  The manifests under `k8s/apps/zeroclaw-assistant/` are a focused reference
-  deployment for a ZeroClaw assistant running behind a Cloudflare Tunnel. They
-  are not the primary control plane for this repository.
 
 If a file or operational decision appears to conflict with that model, the
 Compose-based hybrid stack is the intended default.
@@ -53,25 +47,6 @@ Traefik
         └── vLLM / Ollama
 ```
 
-### Secondary reference deployment: Kubernetes ZeroClaw assistant
-
-```
-Internet
-  │
-  ▼
-Cloudflare Edge
-  │
-  ▼
-Cloudflare Tunnel
-  │
-  ▼
-Hetzner Kubernetes
-  │
-  └── zeroclaw-assistant pod
-      ├── zeroclaw
-      └── cloudflared
-```
-
 ---
 
 ## Repository Structure
@@ -90,10 +65,6 @@ frontend/
 
 mcp-servers/
 └── n8n-bridge/                  # Python MCP server for n8n + 1Password
-
-k8s/
-└── apps/
-    └── zeroclaw-assistant/      # Kubernetes reference deployment
 
 docker-compose.yml               # Production hybrid stack
 docker-compose.local.yml         # Local development stack
@@ -115,10 +86,6 @@ Makefile                         # Standard local/prod orchestration commands
   - `mac` profile for `Ollama`
   - bind mounts for `frontend/` and `backend/`
   - local HTTP-only Traefik without SSO
-
-- `k8s/apps/zeroclaw-assistant/`  
-  A separate, reference-grade K8s deployment pattern for a Cloudflare Tunnel
-  fronted ZeroClaw assistant.
 
 ---
 
@@ -153,12 +120,6 @@ make dev-windows
 ```bash
 cp .env.prod.example .env.prod
 make prod
-```
-
-### Kubernetes reference deployment
-
-```bash
-kubectl apply -k k8s/apps/zeroclaw-assistant/
 ```
 
 ---
