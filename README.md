@@ -130,6 +130,8 @@ Makefile                         # Standard local/prod orchestration commands
 
 For a **GPU-free** local slice (infra + n8n + MCP bridge only, no agents), use `make dev-core` — intended for smoke tests or constrained hosts, not day-to-day development. See `docs/architecture.md` for profile details.
 
+On **Windows** without Git Bash, run `pwsh -File .\scripts\local-dev.ps1` from the repo root (same defaults as `make dev-windows`). Use `-Profile core` for the GPU-free stack, `-Profile mac` for Apple Silicon parity, or `-Profile down` to stop. VS Code: tasks **Compose: local up (Windows full)** / **core** / **down**.
+
 **Traefik** is pinned to a Docker 29-compatible release in this repo. If you still test `http://localhost/` directly and see `404`, that is expected: the local routers match hostnames such as `n8n.localhost` and `openwork.localhost`, not bare `localhost`.
 
 **n8n** is also bound to **http://127.0.0.1:5678** on the host (in addition to Traefik + `N8N_HOST`) so you can still open the UI if Docker Desktop regresses the Docker provider again in a future update.
