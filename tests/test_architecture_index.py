@@ -29,8 +29,7 @@ def test_architecture_index_anchors_runtime_and_docs() -> None:
     required = (
         "`docker-compose.yml`",
         "`docker-compose.local.yml`",
-        "`k8s/apps/zeroclaw-assistant/`",
-        "`docs/mcp-control-plane.md`",
+        "`mcp-control-plane.md`",
     )
     for token in required:
         assert token in text, f"architecture index must cite {token}"
@@ -69,8 +68,9 @@ def test_architecture_index_includes_data_and_config_boundaries() -> None:
     assert ".env.prod.example" in text or "`PROD`" in text or "production" in text.lower()
 
 
-def test_architecture_index_states_primary_and_secondary_runtimes() -> None:
+def test_architecture_index_states_compose_as_canonical_runtime() -> None:
     text = (_repo_root() / "docs" / "architecture.md").read_text(encoding="utf-8")
 
     assert "Primary runtime" in text or "primary runtime" in text.lower()
-    assert "Kubernetes" in text or "kubernetes" in text.lower()
+    assert "runtime source of truth" in text.lower()
+    assert "Docker Compose" in text or "`docker-compose.yml`" in text
