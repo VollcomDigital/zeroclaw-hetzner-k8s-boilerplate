@@ -398,6 +398,12 @@ class SovereigntyRequest(BaseModel):
 
 
 class IdempotencyCache:
+    """In-memory idempotency store for async request handlers.
+
+    Uses :class:`asyncio.Lock` so cache access never blocks the event loop.
+    Synchronous file writes (audit ledger) use :class:`threading.Lock` separately.
+    """
+
     def __init__(self, ttl_seconds: float) -> None:
         self._ttl_seconds = ttl_seconds
         self._entries: dict[str, tuple[float, dict[str, object]]] = {}
@@ -433,6 +439,7 @@ def _planning_config_path_kwargs() -> dict[str, str | None]:
 
 @lru_cache(maxsize=1)
 def get_settings() -> BridgeSettings:
+    # Pass env strings through; BridgeSettings coerces int/float and raises ValidationError on bad values.
     return BridgeSettings(
         host=os.getenv("MCP_HOST", "0.0.0.0"),
         port=os.getenv("MCP_PORT", "8000"),
@@ -480,6 +487,7 @@ def _span_exporter_from_env() -> SpanExporter:
 
 
 def configure_telemetry(service_name: str) -> None:
+    """Install the global TracerProvider once. Uses :func:`_span_exporter_from_env` (OTLP HTTP when ``OTEL_EXPORTER_OTLP_ENDPOINT`` is set, else console)."""
     tracer_provider = trace.get_tracer_provider()
     if isinstance(tracer_provider, SDKTracerProvider):
         return
@@ -1582,6 +1590,7 @@ async def trigger_n8n_workflow_impl(
 
         cache_lookup_started = time.perf_counter()
         cached_result = await cache.get(idempotency_key)
+        span.set_attribute("bridge.idempotency_cache.hit", cached_result is not None)
         span.set_attribute(
             "bridge.idempotency_cache.get_duration_ms",
             round((time.perf_counter() - cache_lookup_started) * 1000.0, 3),

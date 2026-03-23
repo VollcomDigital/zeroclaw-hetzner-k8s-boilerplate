@@ -23,14 +23,14 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@v3
+        uses: github/codeql-action/init@v4
         with:
           # Python only. Do not add javascript/typescript — there is no JS/TS source; a JS DB would fail finalize.
           languages: python
 
       - name: Autobuild
-        uses: github/codeql-action/autobuild@v3
+        uses: github/codeql-action/autobuild@v4
 
       - name: Perform CodeQL analysis
-        # Keep init/autobuild/analyze on the same major (v3). Mixing v3 init with v4 analyze can mis-resolve languages.
-        uses: github/codeql-action/analyze@v3
+        # Keep init/autobuild/analyze on the same major. Mixing majors (e.g. v3 init + v4 analyze) can create/finalize a JS DB incorrectly.
+        uses: github/codeql-action/analyze@v4

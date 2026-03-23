@@ -11,6 +11,7 @@ RUN useradd --create-home --uid 1000 appuser
 
 COPY requirements.lock /app/requirements.lock
 COPY pyproject.toml /app/pyproject.toml
+# Runtime image: application sources only (tests/ excluded by .dockerignore).
 COPY src /app/src
 
 RUN python -m pip install --upgrade pip && \

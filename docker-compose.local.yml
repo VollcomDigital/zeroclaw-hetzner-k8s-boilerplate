@@ -440,7 +440,7 @@ services:
       TZ: ${TZ:-UTC}
     expose:
       - "8000"
-    # Dev-only bind mounts (not used in docker-compose.yml prod). The image excludes tests/; tests are mounted here for pytest inside the container.
+    # Dev-only bind mounts (prod stack does not mount these). Image build: COPY src/ only; tests/ excluded via mcp-servers/n8n-bridge/.dockerignore.
     volumes:
       - ./mcp-servers/n8n-bridge/src:/app/src:rw
       - ./mcp-servers/n8n-bridge/tests:/app/tests:rw

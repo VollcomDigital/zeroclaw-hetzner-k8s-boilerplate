@@ -18,6 +18,7 @@ ensure-local-env:
 ensure-prod-env:
 	@if [[ ! -f "$(PROD_ENV)" ]]; then cp "$(PROD_ENV_EXAMPLE)" "$(PROD_ENV)"; fi
 
+# Inline env for Compose: awk tolerates spaces around '=' in $(LOCAL_ENV) (e.g. OLLAMA_MODEL = qwen...).
 dev-mac: ensure-local-env
 	@LOCAL_LLM_BASE_URL=http://ollama:11434 \
 	LOCAL_LLM_MODEL="$$(awk -F ' *= *' '/^OLLAMA_MODEL[[:space:]]*=/ {print $$2; exit}' $(LOCAL_ENV))" \

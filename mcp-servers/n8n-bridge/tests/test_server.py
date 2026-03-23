@@ -61,6 +61,11 @@ async def test_idempotency_cache_concurrent_reads_do_not_block_event_loop() -> N
     assert all(r is not None and r["request_id"] == "r1" for r in results)
 
 
+def test_idempotency_cache_uses_asyncio_lock_not_threading() -> None:
+    cache = IdempotencyCache(ttl_seconds=60.0)
+    assert isinstance(cache._lock, asyncio.Lock)
+
+
 def test_build_idempotency_key_is_order_insensitive() -> None:
     first = build_idempotency_key("workflow-demo", {"alpha": 1, "beta": 2})
     second = build_idempotency_key("workflow-demo", {"beta": 2, "alpha": 1})
@@ -196,11 +201,41 @@ async def test_get_1password_secret_raises_value_error_when_field_label_missing(
     request = SecretRequest(vault_id="vault-dev", item_id="item-001", field_label="api-key")
 
     async with httpx.AsyncClient() as client:
-        with pytest.raises(
-            ValueError,
-            match=r"Field 'api-key' was not found in vault 'vault-dev' item 'item-001'",
-        ):
+        with pytest.raises(ValueError) as exc_info:
             await get_1password_secret_impl(request, settings, client=client)
+
+    assert str(exc_info.value) == (
+        "Field 'api-key' was not found in vault 'vault-dev' item 'item-001'."
+    )
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_1password_secret_raises_value_error_when_field_id_not_in_item() -> None:
+    """select_field matches id or label; missing both should raise the same ValueError shape."""
+    respx.get("http://1password-connect-api:8080/v1/vaults/vault-dev/items/item-001").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "id": "item-001",
+                "title": "Demo Secret",
+                "fields": [{"id": "only-id", "label": "visible-label", "value": "x"}],
+            },
+        )
+    )
+    settings = BridgeSettings(
+        op_connect_url="http://1password-connect-api:8080",
+        op_connect_token="development-token",
+    )
+    request = SecretRequest(vault_id="vault-dev", item_id="item-001", field_label="wrong-id")
+
+    async with httpx.AsyncClient() as client:
+        with pytest.raises(ValueError) as exc_info:
+            await get_1password_secret_impl(request, settings, client=client)
+
+    assert str(exc_info.value) == (
+        "Field 'wrong-id' was not found in vault 'vault-dev' item 'item-001'."
+    )
 
 
 @pytest.mark.asyncio
