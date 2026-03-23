@@ -36,7 +36,7 @@ The ZeroClaw assistant reference stack runs on Kubernetes behind a Cloudflare Tu
 | Sandbox | `nemoclaw` | NemoClaw mount point |
 | Inference | `vllm` | Production GPU inference (immutable image contract in compose) |
 | Workflows | `n8n` | Automation engine and webhooks |
-| MCP bridge | `mcp-server-n8n` | MCP + n8n + 1Password; see `docs/mcp-control-plane.md` |
+| MCP bridge | `mcp-server-n8n` | MCP + n8n + 1Password; see `mcp-control-plane.md` |
 | Secrets sync | `1password-connect-api`, `1password-connect-sync` | 1Password Connect pair |
 | Relational DB | `postgres` | Application / workflow persistence |
 | Vectors | `qdrant` | Vector store with API key gate |
@@ -60,7 +60,7 @@ Treat cross-tier connectivity as a **conscious exception**: new dependencies sho
 - **ForwardAuth** in production for user-facing UIs behind `traefik`.
 - **Non-root** UIDs and hardened defaults where the stack supports them (see also root `README` → Security Posture).
 - **Secrets**: real credentials stay out of git; use `.env.prod.example` / `.env.local.example` as templates only.
-- **MCP bridge**: bearer gate (`BRIDGE_ACCESS_TOKEN`) and declarative allowlists via `infrastructure/policy/` bundles — details in `docs/mcp-control-plane.md`.
+- **MCP bridge**: bearer gate (`BRIDGE_ACCESS_TOKEN`) and declarative allowlists via `infrastructure/policy/` bundles — details in `mcp-control-plane.md`.
 
 ## Observability
 
@@ -89,5 +89,5 @@ Policy files are **versioned contracts**: changing a bundle implies coordinated 
 
 ## Related documentation
 
-- [`docs/mcp-control-plane.md`](docs/mcp-control-plane.md) — MCP tools, policy bundles, `BRIDGE_*` variables.
+- [`mcp-control-plane.md`](./mcp-control-plane.md) — MCP tools, policy bundles, `BRIDGE_*` variables.
 - Root [`README.md`](../README.md) — canonical platform story, quick start, repository layout.
