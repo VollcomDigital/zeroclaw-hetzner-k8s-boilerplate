@@ -45,7 +45,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push MCP bridge container
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: ./mcp-servers/n8n-bridge
           file: ./mcp-servers/n8n-bridge/Dockerfile
